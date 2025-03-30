@@ -1,10 +1,11 @@
-# 三体问题模拟器
+# 太阳系行星模拟器
 
-这是一个使用Python模拟三体问题（太阳-地球-月球系统）的程序。
+这是一个使用Python模拟太阳系行星运动的程序，考虑了所有天体之间的万有引力作用。
 
 ## 功能特点
 
-- 基于天文精确数据进行三体运动模拟
+- 基于天文精确数据进行太阳系行星运动模拟
+- 考虑所有天体之间的引力相互作用
 - 使用天文学库获取准确的天体初始位置和速度
 - 采用高精度数值积分器求解微分方程
 - 可配置的模拟参数
@@ -18,6 +19,7 @@
 - SciPy
 - Astropy
 - JSON
+- time
 
 ## 使用方法
 
@@ -37,7 +39,7 @@ python simulate.py
   - `TIME_SCALE`: 时间尺度（'utc', 'tt', 'tdb'）
 
 - **天体配置**
-  - `BODIES`: 模拟的天体列表
+  - `BODIES`: 模拟的天体列表，包含太阳和所有行星（及月球）
   - `MASSES`: 天体质量字典（kg）
 
 - **模拟参数**
@@ -57,6 +59,31 @@ python simulate.py
   - `COMPUTE_ORBITAL_PROPERTIES`: 是否计算轨道特性
   - `POSITION_UNIT`: 位置单位（'m'或'au'）
 
+## 包含的天体
+
+默认情况下，模拟包含以下天体：
+
+- 太阳 (sun)
+- 水星 (mercury)
+- 金星 (venus)
+- 地球 (earth)
+- 月球 (moon)
+- 火星 (mars)
+- 木星 (jupiter)
+- 土星 (saturn)
+- 天王星 (uranus)
+- 海王星 (neptune)
+
+## 模拟原理
+
+模拟基于以下物理原理：
+
+1. 牛顿万有引力定律：任意两个天体之间存在引力，大小与质量乘积成正比，与距离平方成反比
+2. 牛顿第二定律：F = ma，力等于质量乘以加速度
+3. 数值积分：使用高精度ODE求解器计算天体在不同时刻的位置和速度
+
+模拟考虑了所有天体之间的引力相互作用，每个天体受到其他所有天体的引力影响。
+
 ## 输出数据格式
 
 根据配置，输出的JSON文件包含每个时间点的天体位置数据，格式如下：
@@ -68,14 +95,23 @@ python simulate.py
   {
     "time": "2025-01-01 00:00:00.000",
     "sun": [x, y, z],
+    "mercury": [x, y, z],
+    "venus": [x, y, z],
     "earth": [x, y, z],
-    "moon": [x, y, z]
+    "moon": [x, y, z],
+    "mars": [x, y, z],
+    "jupiter": [x, y, z],
+    "saturn": [x, y, z],
+    "uranus": [x, y, z],
+    "neptune": [x, y, z]
   },
   ...
 ]
 ```
 
 ### 包含速度数据时
+
+当`INCLUDE_VELOCITY=True`时，每个天体的数据包含位置和速度：
 
 ```json
 [
@@ -85,14 +121,7 @@ python simulate.py
       "position": [x, y, z],
       "velocity": [vx, vy, vz]
     },
-    "earth": {
-      "position": [x, y, z],
-      "velocity": [vx, vy, vz]
-    },
-    "moon": {
-      "position": [x, y, z],
-      "velocity": [vx, vy, vz]
-    }
+    // 其他天体数据...
   },
   ...
 ]
@@ -113,16 +142,10 @@ python simulate.py
 }
 ```
 
-## 添加其他天体
+## 性能考虑
 
-在`config.py`文件中，可以通过修改`BODIES`列表和`MASSES`字典来添加更多天体。例如添加火星：
-
-```python
-BODIES = ['sun', 'earth', 'moon', 'mars']
-MASSES = {
-    'sun': M_sun.value,
-    'earth': M_earth.value,
-    'moon': 7.34767309e22,
-    'mars': 6.4171e23
-}
-``` 
+- 模拟所有行星需要大量计算，特别是当时间跨度较长时
+- 建议从小时间范围开始（如0.1年），逐步增加
+- 增加`OUTPUT_INTERVAL`可以减少输出数据量
+- 高精度积分方法（如'DOP853'）精度更高但计算更慢
+- 对于长时间模拟，可能需要使用更高性能的计算机或云服务 
