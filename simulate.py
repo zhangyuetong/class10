@@ -17,7 +17,7 @@ from config import (
 )
 
 # 导入日食月食预测模块
-from eclipse_prediction import detect_eclipses
+from eclipse_prediction import predict_eclipses
 
 # 万有引力常数（SI 单位 m^3 / (kg s^2)）
 G_val = G.value
@@ -230,7 +230,7 @@ total_time = SIMULATION_YEARS * SECONDS_PER_YEAR
 # 使用arange保证时间点精确为整数倍的OUTPUT_INTERVAL
 n_points = int(total_time/OUTPUT_INTERVAL) + 1
 t_eval = np.arange(0, total_time + 0.1, OUTPUT_INTERVAL)  # 添加0.1秒的容差确保包含结束时间
-print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (每 {OUTPUT_INTERVAL/3600:.1f} 小时)")
+print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (每 {OUTPUT_INTERVAL/60:.2f} 分钟)")
 
 # 使用指定方法求解微分方程
 print(f"\n开始积分计算，使用 {SOLVER_METHOD} 积分器...")
@@ -250,8 +250,12 @@ sol = solve_ivp(
 elapsed = time.time() - start_time
 print(f"积分计算完成！用时 {elapsed:.2f} 秒\n")
 
+# 重塑状态数组以便于日食月食预测
+n_bodies = len(BODIES)
+state_reshaped = sol.y.reshape(n_bodies, 6, -1)  # 重塑为 (天体数, 状态维度, 时间点数)
+
 # 使用积分结果计算是否发生日食月食
-eclipse_events = detect_eclipses(sol, t0, BODIES)
+eclipse_events = predict_eclipses(sol, t0, state_reshaped, BODIES.index('sun'), BODIES.index('earth'), BODIES.index('moon'))
 
 # 将日食月食事件保存到JSON文件
 with open("eclipse_events.json", "w", encoding="utf-8") as f:
