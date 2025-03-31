@@ -7,6 +7,7 @@
 import numpy as np
 from astropy.time import Time
 import astropy.units as u
+from tqdm import tqdm
 
 """
 日食月食的几何推导
@@ -63,12 +64,11 @@ def detect_eclipses(sol, t0, bodies):
         "lunar": []   # 月食
     }
     
+    # 使用tqdm创建进度条
+    pbar = tqdm(total=len(sol.t), desc="分析进度")
+    
     # 遍历所有时间点
     for i, t_sec in enumerate(sol.t):
-        # 每50个点显示一次进度，避免输出过多
-        if i % 50 == 0:
-            print(f"正在分析时间点 {i}/{len(sol.t)}")
-            
         # 获取当前时间
         current_time = t0 + t_sec * u.s
         formatted_time = current_time.iso
@@ -163,7 +163,8 @@ def detect_eclipses(sol, t0, bodies):
                     "moon_angular_radius": float(moon_angular_radius)
                 })
                 
-                print(f"检测到可能的日食事件: {formatted_time}, 类型: {eclipse_type}, 食分: {eclipse_magnitude:.2f}")
+                # 在进度条下方输出检测结果
+                tqdm.write(f"检测到可能的日食事件: {formatted_time}, 类型: {eclipse_type}, 食分: {eclipse_magnitude:.2f}")
         
         # ===== 月食检测 =====
         # 要求地球位于太阳和月球之间，即地球–太阳与地球–月球反向（点积 < 0）
@@ -221,7 +222,14 @@ def detect_eclipses(sol, t0, bodies):
                         "magnitude": float(magnitude)
                     })
                     
-                    print(f"检测到可能的月食事件: {formatted_time}, 类型: {eclipse_type}, 食分: {magnitude:.2f}")
+                    # 在进度条下方输出检测结果
+                    tqdm.write(f"检测到可能的月食事件: {formatted_time}, 类型: {eclipse_type}, 食分: {magnitude:.2f}")
+        
+        # 更新进度条
+        pbar.update(1)
+    
+    # 关闭进度条
+    pbar.close()
     
     print(f"分析完成！发现 {len(eclipse_events['solar'])} 次可能的日食和 {len(eclipse_events['lunar'])} 次可能的月食")
     return eclipse_events
