@@ -135,9 +135,10 @@ def compute_orbital_properties(state, masses):
 total_time = SIMULATION_YEARS * SECONDS_PER_YEAR
 
 # 设置积分输出时间点
+# 使用arange保证时间点精确为整数倍的OUTPUT_INTERVAL
 n_points = int(total_time/OUTPUT_INTERVAL) + 1
-t_eval = np.linspace(0, total_time, n_points)
-print(f"将生成 {n_points} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒")
+t_eval = np.arange(0, total_time + 0.1, OUTPUT_INTERVAL)  # 添加0.1秒的容差确保包含结束时间
+print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (每 {OUTPUT_INTERVAL/3600:.1f} 小时)")
 
 # 使用指定方法求解微分方程
 print(f"\n开始积分计算，使用 {SOLVER_METHOD} 积分器...")
@@ -195,8 +196,13 @@ for i, t_sec in enumerate(sol.t):
     # 计算当前时刻
     current_time = t0 + t_sec * u.s
     
+    # 确保时间格式化精确到整秒
+    # 首先获取完整时间戳，然后格式化输出，忽略微小的数值误差
+    exact_seconds = round(t_sec)
+    formatted_time = (t0 + exact_seconds * u.s).iso
+    
     # 构建当前时刻的数据记录
-    record = {"time": current_time.iso}
+    record = {"time": formatted_time}
     
     # 提取当前时刻的状态
     current_state = np.zeros((n_bodies, 6))
