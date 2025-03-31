@@ -97,8 +97,8 @@ def detect_eclipses(sol, t0, bodies):
         # 要求月球在地球和太阳之间：即地球–月球与地球–太阳同向，且地月距离 < 地日距离
         if np.dot(earth_to_sun_unit, earth_to_moon_unit) > 0 and (earth_moon_dist < earth_sun_dist):
             # 太阳-月球-地球共线检测
-            # 计算向量夹角（弧度）：这里使用 -moon_to_sun_unit 和 earth_to_moon_unit 的夹角
-            solar_eclipse_angle = np.arccos(np.dot(-moon_to_sun_unit, earth_to_moon_unit))
+            # 计算向量夹角（弧度）：这里使用 moon_to_sun_unit 和 earth_to_moon_unit 的夹角
+            solar_eclipse_angle = np.arccos(np.dot(moon_to_sun_unit, earth_to_moon_unit))
             solar_eclipse_threshold = 1e-2  # 角度阈值(弧度)
             if solar_eclipse_angle < solar_eclipse_threshold:
                 # 计算月球本影锥的顶角
