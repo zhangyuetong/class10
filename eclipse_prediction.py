@@ -99,37 +99,42 @@ def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
             # 当夹角小于阈值时进入详细计算
             if solar_eclipse_angle < solar_eclipse_threshold:
                 # 调试输出：显示角度信息（转换为度数）
-                tqdm.write(f"[DEBUG] 时间: {formatted_time} | 地日-地月夹角: {np.degrees(solar_eclipse_angle):.6f}°")
+                tqdm.write(f"[DEBUG] === 时间: {formatted_time} | 地日-地月夹角: {np.degrees(solar_eclipse_angle):.6f}° ===")
                 # ===== 本影锥参数计算 =====
                 # 本影锥长度公式推导：相似三角形 (R_sun - R_moon)/D_sm = R_moon/L_umbra
                 D_sm = moon_sun_dist  # 月日距离 ‖MS‖
+                tqdm.write(f"[DEBUG] 月日距离: {D_sm/1e3:.1f}千公里")
                 L_umbra = (R_moon * D_sm) / (R_sun - R_moon)  # 本影锥理论长度
-                
+                tqdm.write(f"[DEBUG] 本影锥理论长度: {L_umbra/1e3:.1f}千公里")
+
                 # 本影锥方向向量：从太阳指向月球的方向（与光照方向相反）
                 dir_umbra = (moon_pos - sun_pos) / D_sm  # 单位向量 MŜ
-                
+                tqdm.write(f"[DEBUG] 本影锥方向向量: {dir_umbra}")
+
                 # 本影锥顶点计算：顶点位于月球背阳侧延长线上
                 # V_umbra = M + L_umbra * MŜ (沿月日连线延伸)
                 V_umbra = moon_pos + dir_umbra * L_umbra
-                
+                tqdm.write(f"[DEBUG] 本影锥顶点: {V_umbra}")
                 # 计算地球到本影锥顶点的向量
                 VE = earth_pos - V_umbra  # 向量VE = E - V_umbra
-                
+                tqdm.write(f"[DEBUG] 地球到本影锥顶点向量: {VE}")
                 # 地球沿本影轴线方向的投影距离（标量投影）
                 # t_umbra = VE · dir_umbra （带符号的投影长度）
                 t_umbra = np.dot(VE, dir_umbra)
-                
+                tqdm.write(f"[DEBUG] 地球沿本影轴线方向的投影距离: {t_umbra}")
+
                 # 地球到本影轴线的垂直距离（向量分解）
                 # 垂直分量 = VE - (t_umbra * dir_umbra)
                 d_umbra = np.linalg.norm(VE - t_umbra * dir_umbra)
-                
+                tqdm.write(f"[DEBUG] 地球到本影轴线的垂直距离: {d_umbra}")
+
                 # 本影锥半顶角计算（锥体张开角度）
                 alpha_umbra = np.arctan((R_sun - R_moon) / D_sm)  # tanα = (R_sun-R_moon)/D_sm
-                
+                tqdm.write(f"[DEBUG] 本影锥半顶角: {alpha_umbra}")
                 # 本影锥在地球位置的截面半径（随时间变化的锥体宽度）
                 # 锥体半径公式：r = R_earth + t * tanα （考虑地球自身半径）
                 max_r_umbra = R_earth + t_umbra * np.tan(alpha_umbra)
-                
+                tqdm.write(f"[DEBUG] 本影锥在地球位置的截面半径: {max_r_umbra}")
                 # 调试输出本影参数（转换为千米）
                 tqdm.write(f"[DEBUG] 本影长度: {L_umbra/1e3:.1f}千公里 | 顶点距地: {np.linalg.norm(VE)/1e3:.1f}千公里")
                 tqdm.write(f"[DEBUG] 轴向投影: t={t_umbra/1e3:.1f}千公里 | 垂直距离: d={d_umbra/1e3:.1f}千公里")
