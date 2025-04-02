@@ -14,6 +14,8 @@ from matplotlib.patches import Circle
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
+from visualize.solar_plot import plot_eclipse_geometry_3d
+
 """
 日食月食的几何推导
 
@@ -36,129 +38,7 @@ plt.rcParams['axes.unicode_minus'] = False
    - 检查是否落入阴影区域：几何关系计算
 """
 
-def plot_eclipse_geometry(earth_pos, moon_pos, sun_pos, R_earth, R_moon, formatted_time):
-    """
-    绘制日食几何关系图
 
-    参数:
-    earth_pos - 地球位置向量（3D坐标，单位：米）
-    moon_pos  - 月球位置向量（3D坐标，单位：米）
-    sun_pos   - 太阳位置向量（3D坐标，单位：米）
-    R_earth   - 地球半径（单位：米）
-    R_moon    - 月球半径（单位：米）
-    formatted_time - 格式化的时间字符串，用于图标题及文件名
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
-
-    # -------------------------------
-    # 1. 投影到XY平面（忽略Z轴）
-    # -------------------------------
-    earth_2d = earth_pos[:2]  # 取前两个分量
-    moon_2d  = moon_pos[:2]
-    
-    # -------------------------------
-    # 2. 计算太阳光方向
-    # -------------------------------
-    # 太阳发出的光线方向为从太阳指向月球的反方向
-    # 这里先计算从月球指向太阳的单位向量，然后取负
-    sun_direction = sun_pos - moon_pos  
-    sun_direction = sun_direction / np.linalg.norm(sun_direction)  # 单位化
-    base_vector = -sun_direction[:2]  # 在XY平面中取反，得到影锥延伸方向
-    
-    # 确保base_vector是单位向量（一般不会出错）
-    base_vector = base_vector / np.linalg.norm(base_vector)
-    
-    # -------------------------------
-    # 3. 计算地球与月球在平面内的距离（用于确定线段长度）
-    # -------------------------------
-    earth_moon_dist_2d = np.linalg.norm(moon_2d - earth_2d)
-    
-    # -------------------------------
-    # 4. 绘制地球和月球的圆形表示
-    # -------------------------------
-    fig, ax = plt.subplots(figsize=(10, 8))
-    earth_circle = Circle(earth_2d, R_earth, color='blue', alpha=0.7, label='地球')
-    ax.add_patch(earth_circle)
-    moon_circle = Circle(moon_2d, R_moon, color='gray', alpha=0.7, label='月球')
-    ax.add_patch(moon_circle)
-    
-    # -------------------------------
-    # 5. 计算影锥的角度
-    # -------------------------------
-    # 固定太阳半径（单位：米）
-    R_sun = 695700e3
-    
-    # 计算月日距离（单位：米）
-    D_sm = np.linalg.norm(sun_pos - moon_pos)
-    
-    # 根据几何推导：
-    # 本影锥半顶角满足 sin(alpha_umbra) = (R_sun - R_moon) / D_sm
-    # 半影锥半顶角满足 sin(alpha_penumbra) = (R_sun + R_moon) / D_sm
-    # 注意：这里角度一般非常小！
-    alpha_umbra = np.arcsin((R_sun - R_moon) / D_sm)   # 本影锥半顶角
-    alpha_penumbra = np.arcsin((R_sun + R_moon) / D_sm)  # 半影锥半顶角
-    
-    # -------------------------------
-    # 6. 计算在XY平面内垂直于影锥主轴的方向
-    # -------------------------------
-    # base_vector 已经是单位向量，其垂直方向为：
-    perp_vector = np.array([-base_vector[1], base_vector[0]])
-    
-    # -------------------------------
-    # 7. 设定延伸线的长度
-    # -------------------------------
-    line_length = earth_moon_dist_2d * 1.5  # 使得延伸线足够长，覆盖地球
-    
-    # -------------------------------
-    # 8. 绘制本影锥边界（两条边界线）
-    # -------------------------------
-    # 根据旋转公式：将 base_vector 分别旋转 ±alpha_umbra 得到边界方向
-    umbra_vector1 = base_vector * np.cos(alpha_umbra) + perp_vector * np.sin(alpha_umbra)
-    umbra_vector2 = base_vector * np.cos(alpha_umbra) - perp_vector * np.sin(alpha_umbra)
-    
-    # 计算边界线终点（从月球位置延伸 line_length）
-    umbra_end1 = moon_2d + umbra_vector1 * line_length
-    umbra_end2 = moon_2d + umbra_vector2 * line_length
-    
-    # 绘制本影边界线（红色）
-    ax.plot([moon_2d[0], umbra_end1[0]], [moon_2d[1], umbra_end1[1]], 'r-', lw=2, label='本影锥边界')
-    ax.plot([moon_2d[0], umbra_end2[0]], [moon_2d[1], umbra_end2[1]], 'r-', lw=2)
-    
-    # -------------------------------
-    # 9. 绘制半影锥边界（两条边界线）
-    # -------------------------------
-    # 类似地，将 base_vector 旋转 ±alpha_penumbra 得到半影方向
-    penumbra_vector1 = base_vector * np.cos(alpha_penumbra) + perp_vector * np.sin(alpha_penumbra)
-    penumbra_vector2 = base_vector * np.cos(alpha_penumbra) - perp_vector * np.sin(alpha_penumbra)
-    
-    penumbra_end1 = moon_2d + penumbra_vector1 * line_length
-    penumbra_end2 = moon_2d + penumbra_vector2 * line_length
-    
-    # 绘制半影边界线（黄色）
-    ax.plot([moon_2d[0], penumbra_end1[0]], [moon_2d[1], penumbra_end1[1]], 'y-', lw=2, label='半影锥边界')
-    ax.plot([moon_2d[0], penumbra_end2[0]], [moon_2d[1], penumbra_end2[1]], 'y-', lw=2)
-    
-    # -------------------------------
-    # 10. 绘制辅助线（如连心线，帮助理解几何关系）
-    # -------------------------------
-    # 绘制一条从月球指向地球的虚线
-    ax.plot([moon_2d[0], earth_2d[0]], [moon_2d[1], earth_2d[1]], 'k--', lw=1)
-    
-    # -------------------------------
-    # 11. 设置图表属性及保存图像
-    # -------------------------------
-    ax.set_title(f'日食几何关系图 - {formatted_time}')
-    ax.set_xlabel('X坐标 (米)')
-    ax.set_ylabel('Y坐标 (米)')
-    ax.axis('equal')  # 保持X和Y轴比例相同
-    ax.legend()
-    ax.autoscale_view()  # 自动调整坐标轴范围以包含所有元素
-    
-    # 保存图像到文件
-    fig.savefig(f'eclipse_geometry_{formatted_time.replace(":", "_")}.png', dpi=300)
-    plt.close(fig)  # 关闭图形以释放内存
 
 
 def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
@@ -229,7 +109,7 @@ def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
             # 当夹角小于阈值时值得进入详细计算
             if solar_eclipse_angle < solar_eclipse_threshold:
                 # 绘制日食几何关系图
-                plot_eclipse_geometry(earth_pos, moon_pos, sun_pos, R_earth, R_moon, formatted_time)
+                plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, formatted_time)
                 
                 # 调试输出：显示角度信息（转换为度数）
                 tqdm.write(f"[DEBUG] ===== 时间: {formatted_time} | 地日-地月夹角: {np.degrees(solar_eclipse_angle):.6f}° =====")
