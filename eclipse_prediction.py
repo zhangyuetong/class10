@@ -157,7 +157,7 @@ def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
                 penumbra_tip = sun_pos + R_sun / np.sin(penumbra_angle) * umbra_dir
 
                 # 日全食检测：本影锥锥顶在地球内部
-                tqdm.write(f"本影锥顶到地球中心的距离：{np.linalg.norm(umbra_tip - earth_pos)}, 地球半径：{R_earth}")
+                # tqdm.write(f"本影锥顶到地球中心的距离：{np.linalg.norm(umbra_tip - earth_pos)}, 地球半径：{R_earth}")
                 if np.linalg.norm(umbra_tip - earth_pos) < R_earth:
                     eclipse_type = "Total"
 
