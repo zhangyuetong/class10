@@ -33,8 +33,45 @@ from visualize.solar_plot import plot_eclipse_geometry_3d
    - 检查是否落入阴影区域：几何关系计算
 """
 
+def body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
+    """
+    判断天体是否在锥体内部
+    """
+    # 天体到锥顶的向量
+    body_to_cone_tip = body_pos - cone_tip
+    # 天体到锥轴的垂直投影点
+    proj_point = cone_tip + np.dot(body_to_cone_tip, cone_axis) * cone_axis / (np.linalg.norm(cone_axis)**2)
+    # 天体到锥轴的垂直距离（对边）
+    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
+    # 天体到锥轴的水平距离（邻边）
+    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
 
+    # 临界距离
+    critical_distance = np.tan(half_angle) * horizontal_distance + body_radius / np.cos(half_angle)
+    # 判断是否在锥体内
+    if perpendicular_distance < critical_distance:
+        return True
+    return False
 
+def body_totally_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
+    """
+    判断天体是否在锥体内部
+    """
+    # 天体到锥顶的向量
+    body_to_cone_tip = body_pos - cone_tip
+    # 天体到锥轴的垂直投影点
+    proj_point = cone_tip + np.dot(body_to_cone_tip, cone_axis) * cone_axis / (np.linalg.norm(cone_axis)**2)
+    # 天体到锥轴的垂直距离（对边）
+    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
+    # 天体到锥轴的水平距离（邻边）
+    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
+
+    # 临界距离
+    critical_distance = np.tan(half_angle) * horizontal_distance - body_radius / np.cos(half_angle)
+    # 判断是否在锥体内
+    if perpendicular_distance > critical_distance:
+        return False
+    return True  
 
 def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
     """
@@ -103,182 +140,86 @@ def predict_eclipses(sol, t0, state_reshaped, sun_idx, earth_idx, moon_idx):
             
             # 当夹角小于阈值时值得进入详细计算
             if solar_eclipse_angle < solar_eclipse_threshold:
-                # 绘制日食几何关系图
-                plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, formatted_time)
-                
-                # 调试输出：显示角度信息（转换为度数）
-                tqdm.write(f"[DEBUG] ===== 时间: {formatted_time} | 地日-地月夹角: {np.degrees(solar_eclipse_angle):.6f}° =====")
-                # ===== 本影锥参数计算 =====
-                # 本影锥长度公式推导：相似三角形 (R_sun - R_moon)/D_sm = R_moon/L_umbra
-                D_sm = moon_sun_dist  # 月日距离 ‖MS‖
-                tqdm.write(f"[DEBUG] 月日距离: {D_sm/1e3:.1f}千公里")
-                L_umbra = (R_moon * D_sm) / (R_sun - R_moon)  # 本影锥理论长度
-                tqdm.write(f"[DEBUG] 本影锥理论长度: {L_umbra/1e3:.1f}千公里")
+                # 计算基本参数
+                # 影锥轴线
+                umbra_dir = -moon_to_sun_unit
 
-                # 本影锥方向向量：从太阳指向月球的方向（与光照方向相反）
-                dir_umbra = (moon_pos - sun_pos) / D_sm  # 单位向量 MŜ
-                tqdm.write(f"[DEBUG] 本影锥方向向量: {dir_umbra}")
+                # 本影锥半顶角
+                umbra_angle = np.arcsin((R_sun - R_moon) / moon_sun_dist)
 
-                # 本影锥顶点计算：顶点位于月球背阳侧延长线上
-                # V_umbra = M + L_umbra * MŜ (沿月日连线延伸)
-                V_umbra = moon_pos + dir_umbra * L_umbra
-                tqdm.write(f"[DEBUG] 本影锥顶点: {V_umbra}")
-                # 计算地球到本影锥顶点的向量
-                VE = earth_pos - V_umbra  # 向量VE = E - V_umbra
-                tqdm.write(f"[DEBUG] 地球到本影锥顶点向量: {VE}")
-                # 地球沿本影轴线方向的投影距离（标量投影）
-                # t_umbra = VE · dir_umbra （带符号的投影长度）
-                t_umbra = np.dot(VE, dir_umbra)
-                tqdm.write(f"[DEBUG] 地球沿本影轴线方向的投影距离: {t_umbra}")
+                # 本影锥锥顶位置
+                umbra_tip = sun_pos + R_sun / np.sin(umbra_angle) * umbra_dir
 
-                # 地球到本影轴线的垂直距离（向量分解）
-                # 垂直分量 = VE - (t_umbra * dir_umbra)
-                d_umbra = np.linalg.norm(VE - t_umbra * dir_umbra)
-                tqdm.write(f"[DEBUG] 地球到本影轴线的垂直距离: {d_umbra}")
+                # 半影锥半顶角
+                penumbra_angle = np.arcsin((R_sun + R_moon) / moon_sun_dist)
 
-                # 本影锥半顶角计算（锥体张开角度）
-                alpha_umbra = np.arctan((R_sun - R_moon) / D_sm)  # tanα = (R_sun-R_moon)/D_sm
-                tqdm.write(f"[DEBUG] 本影锥半顶角: {alpha_umbra}")
-                # 本影锥在地球位置的截面半径（随时间变化的锥体宽度）
-                # 锥体半径公式：r = R_earth + t * tanα （考虑地球自身半径）
-                max_r_umbra = R_earth + t_umbra * np.tan(alpha_umbra)
-                tqdm.write(f"[DEBUG] 本影锥在地球位置的截面半径: {max_r_umbra}")
-                # 调试输出本影参数（转换为千米）
-                tqdm.write(f"[DEBUG] 本影长度: {L_umbra/1e3:.1f}千公里 | 顶点距地: {np.linalg.norm(VE)/1e3:.1f}千公里")
-                tqdm.write(f"[DEBUG] 轴向投影: t={t_umbra/1e3:.1f}千公里 | 垂直距离: d={d_umbra/1e3:.1f}千公里")
-                tqdm.write(f"[DEBUG] 本影锥半径: {max_r_umbra/1e3:.1f}千公里 | 地球半径: {R_earth/1e3:.1f}千公里")
-                
-                # 初始化事件参数
-                eclipse_type = None
-                eclipse_magnitude = 0.0
-                
-                # ===== 日全食条件判断 =====
-                tqdm.write(f"[DEBUG] === 日全食判断 地月距离: {earth_moon_dist/1e3:.1f}千公里 | 本影长度: {L_umbra/1e3:.1f}千公里 ===")
-                # 条件1：地月距离 < 本影长度 → 本影可达地球轨道附近
-                # 条件2：t_umbra ≥ 0 → 地球在本影锥的延长线上（非后方）
-                # 条件3：d_umbra ≤ max_r_umbra → 地球进入本影锥截面
-                if (earth_moon_dist < L_umbra) and (t_umbra >= 0) and (d_umbra <= max_r_umbra):
+                # 半影锥锥顶位置
+                penumbra_tip = sun_pos + R_sun / np.sin(penumbra_angle) * umbra_dir
+
+                # 日全食检测：本影锥锥顶在地球内部
+                tqdm.write(f"本影锥顶到地球中心的距离：{np.linalg.norm(umbra_tip - earth_pos)}, 地球半径：{R_earth}")
+                if np.linalg.norm(umbra_tip - earth_pos) < R_earth:
                     eclipse_type = "Total"
-                    eclipse_magnitude = 1.0  # 全食时食分强制为1.0
-                    tqdm.write(f"[DEBUG] 日全食条件满足 | D_me/L_umbra={earth_moon_dist/L_umbra:.3f}")
-                
-                # ===== 日环食条件判断 =====
-                else:
-                    tqdm.write(f"[DEBUG] === 日环食判断 地月距离: {earth_moon_dist/1e3:.1f}千公里 | 本影长度: {L_umbra/1e3:.1f}千公里 ===")
-                    # 伪本影（antumbra）参数计算
-                    beta_antumbra = np.arctan((R_sun + R_moon) / D_sm)  # 伪本影半顶角
-                    max_r_antumbra = R_earth + t_umbra * np.tan(beta_antumbra)  # 伪本影截面半径
-                    
-                    tqdm.write(f"[DEBUG] 伪本影半径: {max_r_antumbra/1e3:.1f}千公里 | 地球半径: {R_earth/1e3:.1f}千公里")
-                    
-                    # 条件1：地月距离 > 本影长度 → 本影无法到达地球
-                    # 条件2：t_umbra ≥ 0 → 地球在伪本影延长线上
-                    # 条件3：d_umbra ≤ max_r_antumbra → 地球进入伪本影
-                    if (earth_moon_dist > L_umbra) and (t_umbra >= 0) and (d_umbra <= max_r_antumbra):
-                        eclipse_type = "Annular"
-                        eclipse_magnitude = 1.0  # 环食时食分同样为1.0
-                        tqdm.write(f"[DEBUG] 日环食条件满足 | D_me/L_umbra={earth_moon_dist/L_umbra:.3f}")
-                
-                    # ===== 日偏食条件判断 =====
-                    else:
-                        tqdm.write(f"[DEBUG] === 日偏食判断 地月距离: {earth_moon_dist/1e3:.1f}千公里 | 本影长度: {L_umbra/1e3:.1f}千公里 ===")
-                        # 半影锥参数计算（与伪本影方向相同）
-                        L_penumbra = (R_moon * D_sm) / (R_sun + R_moon)  # 半影锥长度
-                        V_penumbra = moon_pos + dir_umbra * L_penumbra   # 半影锥顶点
-                        VE_pen = earth_pos - V_penumbra                 # 地球到半影顶点向量
-                        
-                        # 投影参数计算（类似本影计算）
-                        t_pen = np.dot(VE_pen, dir_umbra)  # 沿半影轴线的投影距离
-                        d_pen = np.linalg.norm(VE_pen - t_pen * dir_umbra)  # 到轴线的垂直距离
-                        alpha_penumbra = np.arctan((R_sun + R_moon) / D_sm) # 半影半顶角
-                        max_r_penumbra = R_earth + t_pen * np.tan(alpha_penumbra) # 半影截面半径
-                        
-                        tqdm.write(f"[DEBUG] 半影长度: {L_penumbra/1e3:.1f}千公里 | 顶点距地: {np.linalg.norm(VE_pen)/1e3:.1f}千公里")
-                        tqdm.write(f"[DEBUG] 半影投影: t={t_pen/1e3:.1f}千公里 | d={d_pen/1e3:.1f}千公里")
-                        tqdm.write(f"[DEBUG] 半影半径: {max_r_penumbra/1e3:.1f}千公里 vs 地球半径: {R_earth/1e3:.1f}千公里")
-                        
-                        # 判断半影是否覆盖地球
-                        if t_pen >= 0 and d_pen <= max_r_penumbra:
-                            eclipse_type = "Partial"
-                            # 食分计算：基于视圆面重叠比例
-                            sun_ang_rad = np.arcsin(R_sun / earth_sun_dist)  # 太阳视半径 ≈0.266°
-                            moon_ang_rad = np.arcsin(R_moon / earth_moon_dist) # 月球视半径 ≈0.259°
-                            ang_separation = solar_eclipse_angle  # 地心视角距
-                            # 食分公式：(月球视半径 + 太阳视半径 - 角距) / (2×太阳视半径)
-                            eclipse_magnitude = (moon_ang_rad + sun_ang_rad - ang_separation) / (2 * sun_ang_rad)
-                            eclipse_magnitude = np.clip(eclipse_magnitude, 0, 1)  # 约束在[0,1]范围
-                            tqdm.write(f"[DEBUG] 视半径 | 太阳: {np.degrees(sun_ang_rad)*3600:.1f}″ 月球: {np.degrees(moon_ang_rad)*3600:.1f}″")
-                
-                # ===== 事件记录 =====
-                if eclipse_type:
-                    eclipse_events["solar"].append({
-                        "time": formatted_time,
-                        "type": eclipse_type,
-                        "magnitude": round(eclipse_magnitude, 3)  # 保留3位小数
-                    })
-                    # 格式化输出检测结果
-                    tqdm.write(f"[检测] 时间: {formatted_time} | 类型: {eclipse_type:7} | 食分: {eclipse_magnitude:.3f}")
+
+                # 日偏食检测：本影锥锥顶在地球外部，且地球在半影锥内
+                elif body_in_cone(earth_pos, R_earth, penumbra_tip, umbra_dir, penumbra_angle):
+                    eclipse_type = "Partial"
+
+                # 日环食检测：本影锥锥顶在地球外部，且地球在本影锥内（此本影锥的方向为+umbra_dir）
+                elif body_in_cone(earth_pos, R_earth, umbra_tip, umbra_dir, umbra_angle):
+                    eclipse_type = "Annular"
+
+                # 加入日食事件列表
+                eclipse_events["solar"].append({
+                    "time": formatted_time,
+                    "type": eclipse_type,
+                })
         
-        # ===== 月食检测 =====
-        # 要求地球位于太阳和月球之间，即地球–太阳与地球–月球反向（点积 < 0）
-        if np.dot(earth_to_sun_unit, earth_to_moon_unit) < 0:
-            # 计算太阳-地球-月球夹角（弧度），应接近π
-            lunar_eclipse_angle = np.arccos(np.clip(np.dot(-earth_to_sun_unit, earth_to_moon_unit), -1.0, 1.0))
-            lunar_eclipse_threshold = 1e-2  # 角度阈值(弧度)
+        # ===== 月食初步筛选条件 =====
+        # 条件1：月球位于地球与太阳连线的异侧（点积<0）
+        # 条件2：地月距离小于地日距离（确保地球在太阳和月球之间）
+        if np.dot(earth_to_sun_unit, earth_to_moon_unit) < 0 and (earth_moon_dist < earth_sun_dist):
+            # 计算地日-地月向量夹角（精确到1e-12弧度）
+            # 使用np.clip防止浮点误差导致反余弦计算异常
+            cos_theta = np.clip(np.dot(earth_to_sun_unit, -earth_to_moon_unit), -1.0, 1.0)
+            lunar_eclipse_angle = np.arccos(cos_theta)  # 夹角θ = arccos(EŜ·(-EM̂))
+            lunar_eclipse_threshold = 2e-2  # 约1.146度（经验阈值）
             
-            if abs(lunar_eclipse_angle) < lunar_eclipse_threshold:
-                # 计算地球本影锥顶角
-                earth_umbra_angle = 2 * np.arctan((R_sun - R_earth) / earth_sun_dist)
+            # 当夹角小于阈值时值得进入详细计算
+            if lunar_eclipse_angle < lunar_eclipse_threshold:
+                # 计算地球阴影锥基本参数
+                # 影锥轴线
+                earth_umbra_dir = -earth_to_sun_unit
                 
-                # 计算地球本影锥长度
-                earth_umbra_length = R_earth / np.tan(earth_umbra_angle / 2)
+                # 本影锥半顶角
+                earth_umbra_angle = np.arcsin((R_sun - R_earth) / earth_sun_dist)
                 
-                # 计算地球半影锥顶角
-                earth_penumbra_angle = 2 * np.arctan((R_sun + R_earth) / earth_sun_dist)
+                # 本影锥锥顶位置
+                earth_umbra_tip = earth_pos + (R_earth / np.tan(earth_umbra_angle)) * earth_umbra_dir
                 
-                # 若月球在地球影子范围内（本影或半影）
-                if earth_moon_dist < earth_umbra_length or True:  # 这里不再做严格距离限制
-                    # 计算月球到日地连线的垂直距离
-                    projection = np.dot(earth_to_moon, earth_to_sun_unit)
-                    perp_dist = np.sqrt(earth_moon_dist**2 - projection**2)
+                # 半影锥半顶角
+                earth_penumbra_angle = np.arcsin((R_sun + R_earth) / earth_sun_dist)
+                
+                # 半影锥锥顶位置
+                earth_penumbra_tip = earth_pos - (R_earth / np.tan(earth_penumbra_angle)) * earth_umbra_dir
+                
+                # 月全食检测：月球完全进入地球本影锥
+                if body_totally_in_cone(moon_pos, R_moon, earth_umbra_tip, earth_umbra_dir, earth_umbra_angle):
+                    eclipse_type = "Total"
                     
-                    # 计算地球本影在月球距离处的半径
-                    umbra_radius_at_moon = R_earth - (earth_moon_dist * np.tan(earth_umbra_angle / 2))
+                # 月偏食检测：月球部分进入地球本影锥
+                elif body_in_cone(moon_pos, R_moon, earth_umbra_tip, earth_umbra_dir, earth_umbra_angle):
+                    eclipse_type = "Partial"
                     
-                    # 计算地球半影在月球距离处的半径
-                    penumbra_radius_at_moon = R_earth + (earth_moon_dist * np.tan(earth_penumbra_angle / 2))
+                # 半影月食检测：月球进入地球半影锥
+                elif body_in_cone(moon_pos, R_moon, earth_penumbra_tip, earth_umbra_dir, earth_penumbra_angle):
+                    eclipse_type = "Penumbral"
                     
-                    # 判断月食类型
-                    lunar_eclipse_type = None
-                    if perp_dist < umbra_radius_at_moon - R_moon:
-                        lunar_eclipse_type = "Total"  # 全食
-                    elif perp_dist < umbra_radius_at_moon + R_moon:
-                        lunar_eclipse_type = "Partial"  # 偏食
-                    elif perp_dist < penumbra_radius_at_moon + R_moon:
-                        lunar_eclipse_type = "Penumbral"  # 半影食
-                    else:
-                        continue
-                    
-                    # 计算月食食分
-                    if lunar_eclipse_type in ["Total", "Partial"]:
-                        magnitude = (umbra_radius_at_moon + R_moon - perp_dist) / (2 * R_moon)
-                    else:
-                        magnitude = (penumbra_radius_at_moon + R_moon - perp_dist) / (2 * R_moon)
-                    
-                    magnitude = min(1.0, max(0.0, magnitude))
-                    
-                    eclipse_events["lunar"].append({
-                        "time": formatted_time,
-                        "type": lunar_eclipse_type,
-                        "angle": float(lunar_eclipse_angle),
-                        "perpendicular_distance": float(perp_dist),
-                        "umbra_radius": float(umbra_radius_at_moon),
-                        "penumbra_radius": float(penumbra_radius_at_moon),
-                        "magnitude": float(magnitude)
-                    })
-                    
-                    # 在进度条下方输出检测结果
-                    tqdm.write(f"检测到可能的月食事件: {formatted_time}, 类型: {lunar_eclipse_type}, 食分: {magnitude:.2f}")
+                # 加入月食事件列表
+                eclipse_events["lunar"].append({
+                    "time": formatted_time,
+                    "type": eclipse_type,
+                })
         
         # 更新进度条
         pbar.update(1)
