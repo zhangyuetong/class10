@@ -9,8 +9,6 @@ from astropy.time import Time
 import astropy.units as u
 from tqdm import tqdm
 
-from visualize.solar_plot import plot_eclipse_geometry_3d
-
 """
 日食月食的几何推导
 
