@@ -93,7 +93,7 @@ def plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, form
             for vec in vectors:
                 end = start + vec * length_scale * np.linalg.norm(earth_plane - moon_plane)
                 ax.plot([start[0], end[0]], [start[1], end[1]], 
-                        color=color, lw=3, solid_capstyle='round', label=label)
+                        color=color, lw=1, solid_capstyle='round', label=label)
                 label = None  # 避免重复图例
         
         # 本影锥（深红色）
@@ -101,7 +101,7 @@ def plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, form
         plot_cone(moon_edge_bottom, umbra_vectors, '#d62728', None)
         
         # 半影锥（橙色）
-        plot_cone(moon_edge_top, penumbra_vectors, '#ff7f0e', '半影锥')
+        plot_cone(moon_edge_top, penumbra_vectors, '#ff7f0e', '半影锥') 
         plot_cone(moon_edge_bottom, penumbra_vectors, '#ff7f0e', None)
         
         ax.axis('equal')
@@ -129,7 +129,7 @@ def plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, form
     # 子图2：月球特写（只包括月球）
     ax2 = fig.add_subplot(132)
     plot_common(ax2)
-    zoom_size = 5 * R_moon  # 更接近月球范围
+    zoom_size = 2 * R_moon  # 更接近月球范围
     ax2.set_xlim(-zoom_size, zoom_size)
     ax2.set_ylim(-zoom_size, zoom_size)
     ax2.set_title('月球附近影锥结构', pad=15, fontsize=14)
@@ -182,7 +182,7 @@ def plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, form
     # ========================
     plt.tight_layout()
     
-    # 添加图示说明
+    # 添加图示说明，先提及本影锥
     fig.text(0.02, 0.98, "天文图示说明：\n• 红色线：本影锥（完全遮挡）\n• 橙色线：半影锥（部分遮挡）", 
             ha='left', va='top', fontsize=11, 
             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
