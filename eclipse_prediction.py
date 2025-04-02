@@ -8,11 +8,6 @@ import numpy as np
 from astropy.time import Time
 import astropy.units as u
 from tqdm import tqdm
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
-# 设置matplotlib中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei']
-plt.rcParams['axes.unicode_minus'] = False
 
 from visualize.solar_plot import plot_eclipse_geometry_3d
 

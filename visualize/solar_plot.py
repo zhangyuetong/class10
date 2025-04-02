@@ -1,168 +1,194 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+# 设置matplotlib中文字体
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
+
 def plot_eclipse_geometry_3d(earth_pos, moon_pos, sun_pos, R_earth, R_moon, formatted_time):
     """
-    绘制日食几何关系图（在日月地三者确定的平面上），包含三个子图：
-    1. 原图
-    2. 月球特写图
-    3. 地球特写图（包含地球和本影锥顶点）
-
-    参数:
-    earth_pos - 地球位置向量（3D坐标，单位：米）
-    moon_pos  - 月球位置向量（3D坐标，单位：米）
-    sun_pos   - 太阳位置向量（3D坐标，单位：米）
-    R_earth   - 地球半径（单位：米）
-    R_moon    - 月球半径（单位：米）
-    formatted_time - 格式化的时间字符串，用于图标题及文件名
+    日食几何关系图（正确方向+完整显示）
+    包含三个子图：全局视图、月球特写、地球特写
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
-
-    # -------------------------------
-    # 1. 定义日月地平面坐标系
-    # -------------------------------
-    # 计算平面法向量（月地向量 × 月日向量）
+    # ========================
+    # 1. 坐标系定义与投影
+    # ========================
+    # 计算月地向量和月日向量
     moon_to_earth = earth_pos - moon_pos
     moon_to_sun = sun_pos - moon_pos
+    
+    # 建立观测平面坐标系
     normal_vector = np.cross(moon_to_earth, moon_to_sun)
-    normal_vector = normal_vector / np.linalg.norm(normal_vector)  # 单位化
+    normal_vector /= np.linalg.norm(normal_vector)  # 归一化
 
-    # 定义平面内的x轴（月地向量方向）
-    x_axis = moon_to_earth
-    x_axis = x_axis / np.linalg.norm(x_axis)
+    x_axis = moon_to_earth / np.linalg.norm(moon_to_earth)  # 指向地球的方向
+    y_axis = np.cross(normal_vector, x_axis)  # 平面内垂直方向
+    y_axis /= np.linalg.norm(y_axis)
 
-    # 定义平面内的y轴（与x轴和法向量垂直）
-    y_axis = np.cross(normal_vector, x_axis)
-    y_axis = y_axis / np.linalg.norm(y_axis)
-
-    # -------------------------------
-    # 2. 将各天体位置投影到平面坐标系
-    # -------------------------------
+    # 坐标投影函数
     def project_to_plane(pos):
-        # 计算相对于月球位置的向量
         vec = pos - moon_pos
-        # 计算在平面坐标系中的坐标
-        x = np.dot(vec, x_axis)
-        y = np.dot(vec, y_axis)
-        return np.array([x, y])
+        return np.array([np.dot(vec, x_axis), np.dot(vec, y_axis)])
 
+    # 投影关键点
     earth_plane = project_to_plane(earth_pos)
-    moon_plane = project_to_plane(moon_pos)  # 月球在原点
+    moon_plane = np.array([0, 0])  # 月球设为原点
     sun_plane = project_to_plane(sun_pos)
 
-    # -------------------------------
-    # 3. 计算太阳光方向（在平面坐标系中）
-    # -------------------------------
-    sun_direction = sun_plane - moon_plane
-    sun_direction = sun_direction / np.linalg.norm(sun_direction)
-    base_vector = -sun_direction  # 影锥延伸方向
-
-    # -------------------------------
-    # 4. 计算地球与月球在平面内的距离
-    # -------------------------------
-    earth_moon_dist_plane = np.linalg.norm(earth_plane - moon_plane)
-
-    # -------------------------------
-    # 5. 计算影锥的角度
-    # -------------------------------
+    # ========================
+    # 2. 影锥计算
+    # ========================
     R_sun = 695700e3  # 太阳半径
     D_sm = np.linalg.norm(sun_pos - moon_pos)  # 月日距离
+    
+    # 计算太阳方向（注意方向定义）
+    sun_direction = (sun_plane - moon_plane) / np.linalg.norm(sun_plane - moon_plane)
+    shadow_direction = -sun_direction  # 影锥正确延伸方向
 
-    alpha_umbra = np.arcsin((R_sun - R_moon) / D_sm)   # 本影锥半顶角
-    alpha_penumbra = np.arcsin((R_sun + R_moon) / D_sm)  # 半影锥半顶角
+    # 垂直方向向量
+    perp_vector = np.array([-shadow_direction[1], shadow_direction[0]])
+    
+    # 月球边缘切点（上下）
+    moon_edge_top = moon_plane + perp_vector * R_moon
+    moon_edge_bottom = moon_plane - perp_vector * R_moon
 
-    # -------------------------------
-    # 6. 计算在平面内垂直于影锥主轴的方向
-    # -------------------------------
-    perp_vector = np.array([-base_vector[1], base_vector[0]])
+    # 关键角度计算
+    alpha_umbra = np.arctan((R_sun - R_moon) / D_sm)  # 本影锥半角
+    alpha_penumbra = np.arctan((R_sun + R_moon) / D_sm)  # 半影锥半角
 
-    # -------------------------------
-    # 7. 设定延伸线的长度
-    # -------------------------------
-    line_length = earth_moon_dist_plane * 2.0
+    # 生成影锥边界向量
+    def get_shadow_vector(alpha):
+        return [
+            shadow_direction * np.cos(alpha) + perp_vector * np.sin(alpha),
+            shadow_direction * np.cos(alpha) - perp_vector * np.sin(alpha)
+        ]
+    
+    umbra_vectors = get_shadow_vector(alpha_umbra)
+    penumbra_vectors = get_shadow_vector(alpha_penumbra)
 
-    # -------------------------------
-    # 8. 创建包含三个子图的图像
-    # -------------------------------
-    fig = plt.figure(figsize=(15, 5))
-    ax1 = fig.add_subplot(131)  # 原图
-    ax2 = fig.add_subplot(132)  # 月球特写
-    ax3 = fig.add_subplot(133)  # 地球特写
+    # 本影锥长度计算
+    umbra_length = R_moon / np.tan(alpha_umbra)
+    umbra_tip = moon_plane + shadow_direction * umbra_length
 
-    # 用于三个子图的通用绘图函数
+    # ========================
+    # 3. 绘图设置
+    # ========================
+    fig = plt.figure(figsize=(20, 7))
+    fig.suptitle(f'日食几何分析 - {formatted_time}', y=1.05, fontsize=16, fontweight='bold')
+
+    # 通用绘图元素
     def plot_common(ax):
-        # 绘制地球和月球的圆形表示
-        earth_circle = Circle(earth_plane, R_earth, color='blue', alpha=0.7, label='地球')
-        ax.add_patch(earth_circle)
-        moon_circle = Circle(moon_plane, R_moon, color='gray', alpha=0.7, label='月球')
-        ax.add_patch(moon_circle)
-
-        # 绘制本影锥边界
-        umbra_vector1 = base_vector * np.cos(alpha_umbra) + perp_vector * np.sin(alpha_umbra)
-        umbra_vector2 = base_vector * np.cos(alpha_umbra) - perp_vector * np.sin(alpha_umbra)
-        umbra_end1 = moon_plane + umbra_vector1 * line_length
-        umbra_end2 = moon_plane + umbra_vector2 * line_length
-        ax.plot([moon_plane[0], umbra_end1[0]], [moon_plane[1], umbra_end1[1]], 'r-', lw=2, label='本影锥边界')
-        ax.plot([moon_plane[0], umbra_end2[0]], [moon_plane[1], umbra_end2[1]], 'r-', lw=2)
-
-        # 绘制半影锥边界
-        penumbra_vector1 = base_vector * np.cos(alpha_penumbra) + perp_vector * np.sin(alpha_penumbra)
-        penumbra_vector2 = base_vector * np.cos(alpha_penumbra) - perp_vector * np.sin(alpha_penumbra)
-        penumbra_end1 = moon_plane + penumbra_vector1 * line_length
-        penumbra_end2 = moon_plane + penumbra_vector2 * line_length
-        ax.plot([moon_plane[0], penumbra_end1[0]], [moon_plane[1], penumbra_end1[1]], 'y-', lw=2, label='半影锥边界')
-        ax.plot([moon_plane[0], penumbra_end2[0]], [moon_plane[1], penumbra_end2[1]], 'y-', lw=2)
-
-        # 绘制辅助线
-        ax.plot([moon_plane[0], earth_plane[0]], [moon_plane[1], earth_plane[1]], 'k--', lw=1)
-        sun_line_end = moon_plane - sun_direction * line_length * 0.5
-        ax.plot([moon_plane[0], sun_line_end[0]], [moon_plane[1], sun_line_end[1]], 'k:', lw=1, label='太阳方向')
-
+        # 天体绘制
+        earth = Circle(earth_plane, R_earth, color='#1f77b4', alpha=0.8, label='地球')
+        moon = Circle(moon_plane, R_moon, color='#7f7f7f', alpha=0.9, label='月球')
+        ax.add_patch(earth)
+        ax.add_patch(moon)
+        
+        # 辅助线
+        ax.plot([moon_plane[0], earth_plane[0]], [moon_plane[1], earth_plane[1]], 
+                '--', color='#2ca02c', lw=1.5, alpha=0.6, label='月地连线')
+        
+        # 影锥绘制
+        def plot_cone(start, vectors, color, label, length_scale=5):
+            for vec in vectors:
+                end = start + vec * length_scale * np.linalg.norm(earth_plane - moon_plane)
+                ax.plot([start[0], end[0]], [start[1], end[1]], 
+                        color=color, lw=3, solid_capstyle='round', label=label)
+                label = None  # 避免重复图例
+        
+        # 本影锥（深红色）
+        plot_cone(moon_edge_top, umbra_vectors, '#d62728', '本影锥')
+        plot_cone(moon_edge_bottom, umbra_vectors, '#d62728', None)
+        
+        # 半影锥（橙色）
+        plot_cone(moon_edge_top, penumbra_vectors, '#ff7f0e', '半影锥')
+        plot_cone(moon_edge_bottom, penumbra_vectors, '#ff7f0e', None)
+        
         ax.axis('equal')
-        ax.grid(True)
+        ax.grid(True, which='both', linestyle=':', alpha=0.7)
+        ax.ticklabel_format(axis='both', style='sci', scilimits=(0,0))
 
-    # -------------------------------
-    # 9. 绘制原图
-    # -------------------------------
+    # ========================
+    # 4. 三视图布局
+    # ========================
+    earth_moon_dist = np.linalg.norm(earth_plane - moon_plane)
+    
+    # 子图1：全局视图（包括日月和所有线）
+    ax1 = fig.add_subplot(131)
     plot_common(ax1)
-    ax1.set_title(f'全局视图 - {formatted_time}')
-    ax1.set_xlabel('X坐标 (米)')
-    ax1.set_ylabel('Y坐标 (米)')
-    ax1.legend()
+    ax1.set_title('全局几何关系', pad=15, fontsize=14)
+    ax1.set_xlabel('X坐标 (m)', fontsize=12)
+    ax1.set_ylabel('Y坐标 (m)', fontsize=12)
+    ax1.legend(loc='upper right', fontsize=10)
+    
+    # 确保全局视图显示所有线和日月
+    max_dist = earth_moon_dist * 2.0  # 增大显示范围以确保显示完整影锥
+    ax1.set_xlim(-max_dist/2, max_dist/2)
+    ax1.set_ylim(-max_dist/2, max_dist/2)
 
-    # -------------------------------
-    # 10. 绘制月球特写图
-    # -------------------------------
+    # 子图2：月球特写（只包括月球）
+    ax2 = fig.add_subplot(132)
     plot_common(ax2)
-    moon_zoom_scale = R_moon * 10  # 月球半径的10倍范围
-    ax2.set_xlim(moon_plane[0] - moon_zoom_scale, moon_plane[0] + moon_zoom_scale)
-    ax2.set_ylim(moon_plane[1] - moon_zoom_scale, moon_plane[1] + moon_zoom_scale)
-    ax2.set_title('月球特写')
-    ax2.set_xlabel('X坐标 (米)')
+    zoom_size = 5 * R_moon  # 更接近月球范围
+    ax2.set_xlim(-zoom_size, zoom_size)
+    ax2.set_ylim(-zoom_size, zoom_size)
+    ax2.set_title('月球附近影锥结构', pad=15, fontsize=14)
+    ax2.set_xlabel('X坐标 (m)', fontsize=12)
+    
+    # 强调切线接触点
+    ax2.plot(moon_edge_top[0], moon_edge_top[1], 'o', 
+            color='red', markersize=6, markeredgewidth=1.5, 
+            markerfacecolor='none', label='切点')
+    ax2.plot(moon_edge_bottom[0], moon_edge_bottom[1], 'o', 
+            color='red', markersize=6, markeredgewidth=1.5, 
+            markerfacecolor='none')
+    ax2.legend(loc='upper right', fontsize=10)
 
-    # -------------------------------
-    # 11. 绘制地球特写图（包含地球和本影锥顶点）
-    # -------------------------------
+    # 子图3：地球特写（只包括地球和本影锥顶点）
+    ax3 = fig.add_subplot(133)
     plot_common(ax3)
-    # 计算本影锥顶点位置（地球附近）
-    umbra_length = R_moon / np.tan(alpha_umbra)  # 本影锥长度近似值
-    umbra_tip = moon_plane + base_vector * umbra_length
     
-    earth_zoom_scale = R_earth * 3  # 地球半径的3倍范围
-    ax3.set_xlim(earth_plane[0] - earth_zoom_scale, earth_plane[0] + earth_zoom_scale)
-    ax3.set_ylim(earth_plane[1] - earth_zoom_scale, earth_plane[1] + earth_zoom_scale)
-    ax3.set_title('地球特写（含本影锥顶点）')
-    ax3.set_xlabel('X坐标 (米)')
+    # 计算地球与本影锥顶点之间的距离
+    earth_to_umbra_tip = np.linalg.norm(umbra_tip - earth_plane)
     
-    # 标记本影锥顶点
-    ax3.plot(umbra_tip[0], umbra_tip[1], 'ro', markersize=5, label='本影锥顶点')
-    ax3.legend()
+    # 调整地球特写的视图范围，确保地球和本影锥顶点都可见
+    center_x = (earth_plane[0] + umbra_tip[0]) / 2
+    center_y = (earth_plane[1] + umbra_tip[1]) / 2
+    
+    # 确定适当的显示范围，以包含地球和本影锥顶点
+    margin = max(1.2 * R_earth, 0.1 * earth_to_umbra_tip)
+    half_width = earth_to_umbra_tip / 2 + margin
+    
+    ax3.set_xlim(center_x - half_width, center_x + half_width)
+    ax3.set_ylim(center_y - half_width, center_y + half_width)
+    ax3.set_title('地球附近影锥分布', pad=15, fontsize=14)
+    ax3.set_xlabel('X坐标 (m)', fontsize=12)
+    
+    # 标注本影锥顶点
+    ax3.plot(umbra_tip[0], umbra_tip[1], '*', 
+            color='darkred', markersize=15, markeredgewidth=1,
+            label=f'本影顶点\n(距地心:{np.linalg.norm(umbra_tip-earth_plane)/1000:,.1f} km)')
+    
+    # 添加地球表面参考线
+    theta = np.linspace(0, 2*np.pi, 100)
+    ax3.plot(earth_plane[0] + R_earth*np.cos(theta), 
+            earth_plane[1] + R_earth*np.sin(theta),
+            '--', color='blue', alpha=0.5, lw=1.5, label='地球表面')
+    
+    ax3.legend(loc='upper right', fontsize=10)
 
-    # -------------------------------
-    # 12. 调整布局并保存图像
-    # -------------------------------
+    # ========================
+    # 5. 输出设置
+    # ========================
     plt.tight_layout()
-    fig.suptitle(f'日食几何关系图 - {formatted_time}', y=1.05)
     
-    # 保存图像
-    fig.savefig(f'eclipse_geometry_3d_{formatted_time.replace(":", "_")}.png', dpi=300, bbox_inches='tight')
+    # 添加图示说明
+    fig.text(0.02, 0.98, "天文图示说明：\n• 红色线：本影锥（完全遮挡）\n• 橙色线：半影锥（部分遮挡）", 
+            ha='left', va='top', fontsize=11, 
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    # 保存图表
+    output_path = f'Eclipse_Geometry_{formatted_time.replace(":","_")}.png'
+    fig.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close(fig)
+    print(f"图表已保存至: {output_path}")
