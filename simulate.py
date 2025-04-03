@@ -12,8 +12,6 @@ from config import (
     BODIES, MASSES, START_DATE, TIME_SCALE, 
     SIMULATION_YEARS, SECONDS_PER_YEAR, OUTPUT_INTERVAL,
     SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL,
-    OUTPUT_FILENAME, PROGRESS_INTERVAL,
-    INCLUDE_VELOCITY, COMPUTE_ORBITAL_PROPERTIES, POSITION_UNIT
 )
 
 # 导入日食月食预测模块
@@ -103,126 +101,6 @@ def derivatives(t, y):
     
     return dydt.flatten()
 
-# 计算系统的总能量和角动量
-def compute_orbital_properties(state, masses):
-    n_bodies = len(masses)
-    positions = state[:, :3]
-    velocities = state[:, 3:]
-    
-    # 计算总动能
-    kinetic_energy = 0
-    for i in range(n_bodies):
-        kinetic_energy += 0.5 * masses[i] * np.sum(velocities[i]**2)
-    
-    # 计算总势能
-    potential_energy = 0
-    for i in range(n_bodies):
-        for j in range(i+1, n_bodies):
-            r_ij = positions[i] - positions[j]
-            distance = np.linalg.norm(r_ij)
-            potential_energy -= G_val * masses[i] * masses[j] / distance
-    
-    # 计算总角动量
-    angular_momentum = np.zeros(3)
-    for i in range(n_bodies):
-        angular_momentum += masses[i] * np.cross(positions[i], velocities[i])
-    
-    return {
-        "kinetic_energy": kinetic_energy,
-        "potential_energy": potential_energy,
-        "total_energy": kinetic_energy + potential_energy,
-        "angular_momentum": angular_momentum.tolist()
-    }
-
-def process_output_data(sol, t0, save_file=True):
-    """
-    处理积分结果并输出数据
-    
-    参数:
-    sol: 积分求解结果
-    t0: 初始时间
-    save_file: 是否保存到文件，默认为True
-    
-    返回:
-    处理后的数据
-    """
-    print("开始处理输出数据...")
-    output = []
-    # 预处理数据以提高速度
-    n_bodies = len(BODIES)
-    state_reshaped = sol.y.reshape(n_bodies, 6, -1)  # 重塑为 (天体数, 状态维度, 时间点数)
-
-    # 单位转换系数
-    position_unit_factor = 1.0
-    if POSITION_UNIT.lower() == 'au':
-        position_unit_factor = 1.0 / 1.496e11  # 从米转换为AU
-        print(f"位置将以天文单位(AU)输出")
-    else:
-        print(f"位置将以米(m)输出")
-
-    # 确定是否输出速度
-    if INCLUDE_VELOCITY:
-        print("将包含速度数据")
-    # 确定是否计算轨道特性
-    if COMPUTE_ORBITAL_PROPERTIES:
-        print("将计算轨道特性")
-
-    # 按照配置的间隔输出进度
-    total_points = len(sol.t)
-    data_process_start = time.time()
-    print(f"开始处理 {total_points} 个时间点的数据...")
-
-    for i, t_sec in enumerate(sol.t):
-        if i % PROGRESS_INTERVAL == 0:
-            progress = i/total_points*100
-            elapsed = time.time() - data_process_start
-            est_total = elapsed / (i+1) * total_points if i > 0 else 0
-            est_remaining = est_total - elapsed if est_total > 0 else 0
-            print(f"已处理 {i}/{total_points} 点 ({progress:.1f}%) - 剩余时间约 {est_remaining:.1f} 秒")
-        
-        # 计算当前时刻
-        current_time = t0 + t_sec * u.s
-        
-        # 确保时间格式化精确到整秒
-        # 首先获取完整时间戳，然后格式化输出，忽略微小的数值误差
-        exact_seconds = round(t_sec)
-        formatted_time = (t0 + exact_seconds * u.s).iso
-        
-        # 构建当前时刻的数据记录
-        record = {"time": formatted_time}
-        
-        # 提取当前时刻的状态
-        current_state = np.zeros((n_bodies, 6))
-        for j in range(n_bodies):
-            current_state[j, :3] = state_reshaped[j, :3, i] * position_unit_factor
-            current_state[j, 3:] = state_reshaped[j, 3:, i]
-        
-        # 添加位置数据和可选的速度数据
-        for j, body in enumerate(BODIES):
-            if INCLUDE_VELOCITY:
-                record[body] = {
-                    "position": current_state[j, :3].tolist(),
-                    "velocity": current_state[j, 3:].tolist()
-                }
-            else:
-                record[body] = current_state[j, :3].tolist()
-        
-        # 如果需要计算轨道特性
-        if COMPUTE_ORBITAL_PROPERTIES and i % 10 == 0:  # 每10个点计算一次以减少计算量
-            record["orbital_properties"] = compute_orbital_properties(current_state, masses)
-        
-        output.append(record)
-
-    # 输出到 JSON 文件
-    if save_file:
-        print("正在保存数据到JSON文件...")
-        with open(OUTPUT_FILENAME, "w", encoding="utf-8") as f:
-            json.dump(output, f, indent=2, ensure_ascii=False)
-        print(f"结果已保存至 {OUTPUT_FILENAME}")
-        print(f"文件包含 {len(output)} 个时间点的数据，时间范围从 {output[0]['time']} 到 {output[-1]['time']}")
-    
-    return output
-
 # 设置积分总时间
 total_time = SIMULATION_YEARS * SECONDS_PER_YEAR
 
@@ -261,10 +139,6 @@ eclipse_events = predict_eclipses(sol, t0, state_reshaped, BODIES.index('sun'), 
 with open("eclipse_events.json", "w", encoding="utf-8") as f:
     json.dump(eclipse_events, f, indent=2, ensure_ascii=False)
 print(f"日食月食事件已保存至 eclipse_events.json")
-
-# 默认不调用输出数据处理函数
-# 如果需要输出轨道数据，取消下面一行的注释
-# output_data = process_output_data(sol, t0)
 
 total_elapsed = time.time() - start_time
 print(f"模拟完成！总用时 {total_elapsed:.2f} 秒")

@@ -53,18 +53,6 @@ SOLVER_METHOD = 'DOP853'                 # 积分方法，DOP853为高精度方�
 SOLVER_RTOL = 1e-13                       # 相对误差容限
 SOLVER_ATOL = 1e-16                      # 绝对误差容限
 
-# 输出配置
-OUTPUT_FILENAME = "solar_system_positions.json"  # 输出文件名
-PROGRESS_INTERVAL = 100                  # 进度显示间隔（数据点数）
-
-# 以下是一些可选配置，可根据需要启用
-
-# 是否包含速度数据在输出中
-INCLUDE_VELOCITY = True
-
-# 是否自动计算轨道特性（如角动量、能量）
-COMPUTE_ORBITAL_PROPERTIES = True
-
 # 输出单位配置
 # 可选：'m'（米）或'au'（天文单位）
 POSITION_UNIT = 'au'  # 使用天文单位更适合太阳系尺度 
