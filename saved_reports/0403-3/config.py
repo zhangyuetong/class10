@@ -50,8 +50,8 @@ OUTPUT_INTERVAL = 3600                   # 输出时间间隔（秒）- 增加�
 # 求解器参数
 # 求解器方法选项：'RK45', 'RK23', 'DOP853', 'Radau', 'BDF', 'LSODA'
 SOLVER_METHOD = 'DOP853'                 # 积分方法，DOP853为高精度方法
-SOLVER_RTOL = 1e-13                       # 相对误差容限
-SOLVER_ATOL = 1e-16                      # 绝对误差容限
+SOLVER_RTOL = 1e-15                       # 相对误差容限
+SOLVER_ATOL = 1e-18                      # 绝对误差容限
 
 # 输出配置
 OUTPUT_FILENAME = "solar_system_positions.json"  # 输出文件名
