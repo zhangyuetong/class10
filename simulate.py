@@ -10,14 +10,11 @@ solar_system_ephemeris.set('de440')
 
 import astropy.units as u
 import time
-# from astropy.constants import G  # <- 将其注释掉或去掉
-# G_val = G.value                 # <- 也不再需要
 
 # 导入配置文件
 from config import (
-    BODIES,                 # 天体列表
-    # MASSES,               # 如果不再需要，也可以不导入
-    GM_DICT,                # 新增或替换：从 config 里获取 GM_DICT
+    BODIES,
+    GM_DICT,
     START_DATE,
     TIME_SCALE,
     SIMULATION_YEARS,
@@ -28,12 +25,16 @@ from config import (
     SOLVER_ATOL,
 )
 
-# 导入日食月食预测模块
+# 导入日食月食预测模块（此处已是向量化优化版）
 from eclipse_prediction import predict_eclipses
 
-# 导入误差分析模块
-from error_analysis import run_error_analysis
-
+# 如果有误差分析模块，可在此导入
+try:
+    from error_analysis import run_error_analysis
+    ERROR_ANALYSIS_AVAILABLE = True
+except ImportError:
+    ERROR_ANALYSIS_AVAILABLE = False
+    print("[警告] 未找到 error_analysis.py，跳过误差分析。")
 
 
 # 设置初始时刻
@@ -47,95 +48,114 @@ print("正在获取天体初始状态...")
 init_state = []
 for body in BODIES:
     pos, vel = get_body_barycentric_posvel(body, t0)
-    # 转换为 SI 单位：位置单位转换为 m，速度转换为 m/s
-    pos = pos.get_xyz().to(u.m).value  # 三维位置数组
-    vel = vel.xyz.to(u.m/u.s).value    # 三维速度数组
-    init_state.append(pos)
-    init_state.append(vel)
-# 将状态向量展平
+    # 转换为 SI 单位：位置（米），速度（米/秒）
+    pos_m = pos.get_xyz().to(u.m).value  
+    vel_m_s = vel.xyz.to(u.m/u.s).value  
+    init_state.append(pos_m)
+    init_state.append(vel_m_s)
+
+# 初始状态向量 y0
 y0 = np.hstack(init_state)
 
-# 将字典转换为数组，保持顺序与BODIES一致
-# masses = np.array([MASSES[body] for body in BODIES])  # <- 不再需要
-gm_values = np.array([GM_DICT[body] for body in BODIES])  # 新增：GM 数组
+# 将 GM_DICT (各天体 GM) 转为数组，与 BODIES 顺序对应
+gm_values = np.array([GM_DICT[body] for body in BODIES])
 
+# ------------------------------
+# 计算加速度的辅助函数（向量化）
+# ------------------------------
 def calculate_accelerations_vectorized(positions, gm_values):
     """
-    使用向量化操作计算所有天体的加速度，基于 GM 而非 G*M
-    positions: (n_bodies, 3)
-    gm_values: (n_bodies,) 对应各天体 GM
+    使用向量化操作计算所有天体的加速度 (3D)。
+    positions : shape = (n_bodies, 3)
+    gm_values : shape = (n_bodies,)  # 各天体 GM
     """
     n_bodies = len(gm_values)
     accelerations = np.zeros((n_bodies, 3))
-    
-    # 计算所有天体对之间的位置差和距离
-    r_ij = positions[:, np.newaxis, :] - positions[np.newaxis, :, :]
-    dist_squared = np.sum(r_ij**2, axis=2)
-    dist_cubed = np.power(dist_squared, 1.5)
-    
-    # 计算加速度
+
+    # 所有位置差向量: r_ij = r_i - r_j
+    r_ij = positions[:, None, :] - positions[None, :, :]  # shape=(n_bodies, n_bodies, 3)
+    dist_sq = np.sum(r_ij**2, axis=2)                    # shape=(n_bodies, n_bodies)
+    dist_cubed = dist_sq**1.5                            # shape=(n_bodies, n_bodies)
+
+    # 计算引力加速度
     for i in range(n_bodies):
         for j in range(n_bodies):
             if i != j:
-                # 直接使用 GM[j] 代替 G_val * masses[j]
-                accelerations[i] += - gm_values[j] * r_ij[i, j] / dist_cubed[i, j]
-    
+                accelerations[i] -= gm_values[j] * r_ij[i, j] / dist_cubed[i, j]
+
     return accelerations
 
+# ------------------------------
+# ODE 求解器右端函数
+# ------------------------------
 def derivatives(t, y):
     """
-    计算状态向量的导数：y 包含了所有天体的位置与速度
+    y 包含 n_bodies 个天体的 [x,y,z, vx,vy,vz]，
+    返回同样形状的导数 dydt = [vx,vy,vz, ax,ay,az].
     """
     n_bodies = len(BODIES)
     state = y.reshape((n_bodies, 6))
     positions = state[:, :3]
     velocities = state[:, 3:]
-    
+
+    # 位置导数 = 速度
     dydt = np.zeros_like(state)
-    # 位置的导数是速度
     dydt[:, :3] = velocities
-    # 速度的导数是加速度
+
+    # 速度导数 = 引力加速度
     accelerations = calculate_accelerations_vectorized(positions, gm_values)
     dydt[:, 3:] = accelerations
-    
+
     return dydt.flatten()
 
-# 设置积分总时间
+# ------------------------------
+# 设置积分时间和采样
+# ------------------------------
 total_time = SIMULATION_YEARS * SECONDS_PER_YEAR
+t_eval = np.arange(0, total_time + 0.1, OUTPUT_INTERVAL)  # 每隔 OUTPUT_INTERVAL 秒输出
 
-# 设置积分输出时间点
-n_points = int(total_time / OUTPUT_INTERVAL) + 1
-t_eval = np.arange(0, total_time + 0.1, OUTPUT_INTERVAL)
-print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (约 {OUTPUT_INTERVAL/60:.2f} 分钟)")
-
+print(f"将生成 {len(t_eval)} 个数据点，时间间隔 = {OUTPUT_INTERVAL} 秒")
 print(f"\n开始积分计算，使用 {SOLVER_METHOD} 积分器...")
 start_time = time.time()
 
 sol = solve_ivp(
-    derivatives, 
-    [0, total_time], 
-    y0, 
-    method=SOLVER_METHOD, 
-    t_eval=t_eval, 
-    rtol=SOLVER_RTOL, 
+    derivatives,
+    [0, total_time],
+    y0,
+    method=SOLVER_METHOD,
+    t_eval=t_eval,
+    rtol=SOLVER_RTOL,
     atol=SOLVER_ATOL
 )
 
 elapsed = time.time() - start_time
 print(f"积分计算完成！用时 {elapsed:.2f} 秒\n")
 
-# 重塑状态数组 (天体数, 6, 时间点数)
+# 整理积分结果
 n_bodies = len(BODIES)
 state_reshaped = sol.y.reshape(n_bodies, 6, -1)
 
+# ------------------------------
 # 日食月食预测
-eclipse_events = predict_eclipses(sol, t0, state_reshaped, BODIES.index('sun'), BODIES.index('earth'), BODIES.index('moon'))
+# ------------------------------
+sun_idx   = BODIES.index('sun')
+earth_idx = BODIES.index('earth')
+moon_idx  = BODIES.index('moon')
+
+eclipse_events = predict_eclipses(
+    sol, t0, state_reshaped,
+    sun_idx, earth_idx, moon_idx
+)
+
 with open("eclipse_events.json", "w", encoding="utf-8") as f:
     json.dump(eclipse_events, f, indent=2, ensure_ascii=False)
 print(f"日食月食事件已保存至 eclipse_events.json")
 
-# 运行误差分析
-run_error_analysis(sol, t0, state_reshaped, BODIES, t_eval)
+# ------------------------------
+# 如果需要，可执行误差分析
+# ------------------------------
+if ERROR_ANALYSIS_AVAILABLE:
+    run_error_analysis(sol, t0, state_reshaped, BODIES, t_eval)
 
 total_elapsed = time.time() - start_time
 print(f"模拟完成！总用时 {total_elapsed:.2f} 秒")
