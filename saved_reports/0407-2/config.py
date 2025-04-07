@@ -57,7 +57,7 @@ BODIES = [
 # }
 
 # 模拟参数
-SIMULATION_YEARS = 5                 # 模拟时长（年）- 增加时长以便观察更明显的变化
+SIMULATION_YEARS = 50                 # 模拟时长（年）- 增加时长以便观察更明显的变化
 SECONDS_PER_YEAR = 365.24 * 86400        # 每年的秒数
 OUTPUT_INTERVAL = 3600                   # 输出时间间隔（秒）- 增加间隔减少数据量
 

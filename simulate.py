@@ -1,17 +1,26 @@
-import numpy as np 
+import numpy as np
 from scipy.integrate import solve_ivp
 import json
 from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel
 import astropy.units as u
 import time
-from astropy.constants import G
+# from astropy.constants import G  # <- 将其注释掉或去掉
+# G_val = G.value                 # <- 也不再需要
 
 # 导入配置文件
 from config import (
-    BODIES, MASSES, START_DATE, TIME_SCALE, 
-    SIMULATION_YEARS, SECONDS_PER_YEAR, OUTPUT_INTERVAL,
-    SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL,
+    BODIES,                 # 天体列表
+    # MASSES,               # 如果不再需要，也可以不导入
+    GM_DICT,                # 新增或替换：从 config 里获取 GM_DICT
+    START_DATE,
+    TIME_SCALE,
+    SIMULATION_YEARS,
+    SECONDS_PER_YEAR,
+    OUTPUT_INTERVAL,
+    SOLVER_METHOD,
+    SOLVER_RTOL,
+    SOLVER_ATOL,
 )
 
 # 导入日食月食预测模块
@@ -19,9 +28,6 @@ from eclipse_prediction import predict_eclipses
 
 # 导入误差分析模块
 from error_analysis import run_error_analysis
-
-# 万有引力常数（SI 单位 m^3 / (kg s^2)）
-G_val = G.value
 
 # 设置初始时刻
 t0 = Time(START_DATE, scale=TIME_SCALE)
@@ -43,32 +49,35 @@ for body in BODIES:
 y0 = np.hstack(init_state)
 
 # 将字典转换为数组，保持顺序与BODIES一致
-masses = np.array([MASSES[body] for body in BODIES])
+# masses = np.array([MASSES[body] for body in BODIES])  # <- 不再需要
+gm_values = np.array([GM_DICT[body] for body in BODIES])  # 新增：GM 数组
 
-def calculate_accelerations_vectorized(positions, masses):
+def calculate_accelerations_vectorized(positions, gm_values):
     """
-    使用向量化操作计算所有天体的加速度
+    使用向量化操作计算所有天体的加速度，基于 GM 而非 G*M
+    positions: (n_bodies, 3)
+    gm_values: (n_bodies,) 对应各天体 GM
     """
-    n_bodies = len(masses)
+    n_bodies = len(gm_values)
     accelerations = np.zeros((n_bodies, 3))
     
     # 计算所有天体对之间的位置差和距离
     r_ij = positions[:, np.newaxis, :] - positions[np.newaxis, :, :]
-    epsilon = 1e-10
     dist_squared = np.sum(r_ij**2, axis=2)
-    dist_cubed = np.power(dist_squared + epsilon, 1.5)
+    dist_cubed = np.power(dist_squared, 1.5)
     
     # 计算加速度
     for i in range(n_bodies):
         for j in range(n_bodies):
             if i != j:
-                accelerations[i] += -G_val * masses[j] * r_ij[i, j] / dist_cubed[i, j]
+                # 直接使用 GM[j] 代替 G_val * masses[j]
+                accelerations[i] += - gm_values[j] * r_ij[i, j] / dist_cubed[i, j]
     
     return accelerations
 
 def derivatives(t, y):
     """
-    计算状态向量的导数
+    计算状态向量的导数：y 包含了所有天体的位置与速度
     """
     n_bodies = len(BODIES)
     state = y.reshape((n_bodies, 6))
@@ -79,7 +88,7 @@ def derivatives(t, y):
     # 位置的导数是速度
     dydt[:, :3] = velocities
     # 速度的导数是加速度
-    accelerations = calculate_accelerations_vectorized(positions, masses)
+    accelerations = calculate_accelerations_vectorized(positions, gm_values)
     dydt[:, 3:] = accelerations
     
     return dydt.flatten()
@@ -90,7 +99,7 @@ total_time = SIMULATION_YEARS * SECONDS_PER_YEAR
 # 设置积分输出时间点
 n_points = int(total_time / OUTPUT_INTERVAL) + 1
 t_eval = np.arange(0, total_time + 0.1, OUTPUT_INTERVAL)
-print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (每 {OUTPUT_INTERVAL/60:.2f} 分钟)")
+print(f"将生成 {len(t_eval)} 个数据点，时间间隔为 {OUTPUT_INTERVAL} 秒 (约 {OUTPUT_INTERVAL/60:.2f} 分钟)")
 
 print(f"\n开始积分计算，使用 {SOLVER_METHOD} 积分器...")
 start_time = time.time()
