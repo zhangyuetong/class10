@@ -3,6 +3,11 @@ from scipy.integrate import solve_ivp
 import json
 from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel
+
+# 全局设置星表
+from astropy.coordinates import solar_system_ephemeris
+solar_system_ephemeris.set('de440')
+
 import astropy.units as u
 import time
 # from astropy.constants import G  # <- 将其注释掉或去掉
@@ -28,6 +33,8 @@ from eclipse_prediction import predict_eclipses
 
 # 导入误差分析模块
 from error_analysis import run_error_analysis
+
+
 
 # 设置初始时刻
 t0 = Time(START_DATE, scale=TIME_SCALE)

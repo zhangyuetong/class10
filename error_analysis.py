@@ -2,6 +2,11 @@ import numpy as np
 import json
 from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel
+
+# 全局设置星表
+from astropy.coordinates import solar_system_ephemeris
+solar_system_ephemeris.set('de440')
+
 import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
