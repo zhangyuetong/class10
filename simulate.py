@@ -27,7 +27,7 @@ G_val = G.value
 t0 = Time(START_DATE, scale=TIME_SCALE)
 print(f"模拟开始时间: {t0.iso}")
 print(f"模拟天体: {', '.join(BODIES)}")
-print(f"模拟时长: {SIMULATION_YEARS} 年 (约 {SIMULATION_YEARS*365.25:.1f} 天)")
+print(f"模拟时长: {SIMULATION_YEARS} 年 (约 {SIMULATION_YEARS*365.24:.1f} 天)")
 
 # 获取天体的初始位置和速度（相对于太阳系质心）
 print("正在获取天体初始状态...")

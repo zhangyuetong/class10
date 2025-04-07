@@ -105,54 +105,56 @@ def plot_errors(error_stats, BODIES):
               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h']
 
-    # 为每个天体绘制误差曲线
+    # 只为地球绘制误差曲线
     for i, body in enumerate(BODIES):
+        # 只处理地球
+        if body != 'earth':
+            continue
+            
         # 提取数据
         times = [Time(item["time"]).datetime for item in error_stats[body]]
         pos_errors = [item["pos_error_m"] for item in error_stats[body]]
         vel_errors = [item["vel_error_m_s"] for item in error_stats[body]]
         
-        # 在第一个子图中绘制位置误差
+        # 在第一个子图中绘制位置误差 - 使用普通坐标而非对数坐标
         color_idx = i % len(colors)
         marker_idx = i % len(markers)
-        ax1.semilogy(times, pos_errors, 
-                     label=body, 
-                     color=colors[color_idx],
-                     marker=markers[marker_idx], 
-                     markersize=8,
-                     linestyle='-',
-                     linewidth=1.5,
-                     markevery=max(1, len(times)//10))  # 只显示部分标记点，避免过于拥挤
+        ax1.plot(times, pos_errors, 
+                 label=body, 
+                 color=colors[color_idx],
+                 marker=markers[marker_idx], 
+                 markersize=8,
+                 linestyle='-',
+                 linewidth=1.5,
+                 markevery=max(1, len(times)//10))  # 只显示部分标记点，避免过于拥挤
         
-        # 在第二个子图中绘制速度误差
-        ax2.semilogy(times, vel_errors, 
-                     label=body, 
-                     color=colors[color_idx],
-                     marker=markers[marker_idx], 
-                     markersize=8,
-                     linestyle='-',
-                     linewidth=1.5,
-                     markevery=max(1, len(times)//10))
+        # 在第二个子图中绘制速度误差 - 使用普通坐标而非对数坐标
+        ax2.plot(times, vel_errors, 
+                 label=body, 
+                 color=colors[color_idx],
+                 marker=markers[marker_idx], 
+                 markersize=8,
+                 linestyle='-',
+                 linewidth=1.5,
+                 markevery=max(1, len(times)//10))
 
     # 设置第一个子图(位置误差)的属性
     ax1.set_ylabel('位置误差 (米)', fontsize=14, fontproperties='SimHei')
-    ax1.set_title('位置误差随时间变化', fontsize=14, fontproperties='SimHei')
-    ax1.grid(True, which='both', linestyle='--', alpha=0.7)
-    ax1.legend(loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=10, prop={'family':'SimHei'})
-    ax1.set_ylim(bottom=1e-5)  # 设置Y轴下限，根据实际误差调整
-
+    ax1.set_title('位置误差随时间变化 (地球)', fontsize=14, fontproperties='SimHei')
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    ax1.legend(loc='upper left', fontsize=10, prop={'family':'SimHei'})
+    
     # 设置第二个子图(速度误差)的属性
     ax2.set_ylabel('速度误差 (米/秒)', fontsize=14, fontproperties='SimHei')
     ax2.set_xlabel('时间', fontsize=14, fontproperties='SimHei')
-    ax2.set_title('速度误差随时间变化', fontsize=14, fontproperties='SimHei')
-    ax2.grid(True, which='both', linestyle='--', alpha=0.7)
-    ax2.legend(loc='upper left', bbox_to_anchor=(1.01, 1), fontsize=10, prop={'family':'SimHei'})
-    ax2.set_ylim(bottom=1e-9)  # 设置Y轴下限，根据实际误差调整
+    ax2.set_title('速度误差随时间变化 (地球)', fontsize=14, fontproperties='SimHei')
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    ax2.legend(loc='upper left', fontsize=10, prop={'family':'SimHei'})
 
     # 格式化x轴日期
     date_fmt = mdates.DateFormatter('%Y-%m-%d')
     ax2.xaxis.set_major_formatter(date_fmt)
-    ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=6))  # 每6个月显示一个刻度
+    ax2.xaxis.set_major_locator(mdates.MonthLocator(interval=24))  # 每24个月显示一个刻度
     fig.autofmt_xdate()  # 自动格式化日期标签，避免重叠
 
     # 调整布局
