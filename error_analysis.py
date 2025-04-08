@@ -196,12 +196,12 @@ def run_error_analysis(sol, t0, state_reshaped, BODIES, t_eval, sample_interval=
     error_stats = analyze_errors(sol, t0, state_reshaped, BODIES, t_eval, sample_interval)
     
     # 打印误差摘要
-    print_error_summary(error_stats, BODIES)
+    # print_error_summary(error_stats, BODIES)
     
     # 绘制误差图
     plot_errors(error_stats, BODIES)
     
     # 保存误差数据
-    save_error_data(error_stats, BODIES)
+    # save_error_data(error_stats, BODIES)
     
     return error_stats
