@@ -45,3 +45,5 @@ SOLVER_ATOL = 1e-16                      # 绝对误差容限
 # 输出单位配置
 # 可选：'m'（米）或'au'（天文单位）
 POSITION_UNIT = 'au'  # 使用天文单位更适合太阳系尺度 
+
+MAX_STEP_TIME = 3600 # simulate_with_event里面的检测周期（秒）
