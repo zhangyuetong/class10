@@ -30,6 +30,8 @@ GM_DICT = {
     # 视需求还可以包含 pluto, ceres 等
 }
 
+C_LIGHT = 299792458.0  # 光速（m/s）
+
 # 求解器参数
 # 求解器方法选项：'RK45', 'RK23', 'DOP853', 'Radau', 'BDF', 'LSODA'
 SOLVER_METHOD = 'DOP853'                 # 积分方法，DOP853为高精度方法
