@@ -47,3 +47,4 @@ SOLVER_ATOL = 1e-16                      # 绝对误差容限
 POSITION_UNIT = 'au'  # 使用天文单位更适合太阳系尺度 
 
 MAX_STEP_TIME = 3600 # simulate_with_event里面的检测周期（秒）
+ERROR_EVAL_INTERVAL = 86400*30
