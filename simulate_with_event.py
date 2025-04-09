@@ -137,17 +137,17 @@ events = [
 ]
 
 # 加速度计算
+# gpt建议用numpy广播加速
 def calculate_accelerations_vectorized(positions, gm_values):
-    n = len(gm_values)
-    acc = np.zeros((n, 3))
-    r_ij = positions[:, None, :] - positions[None, :, :]
-    dist_sq = np.sum(r_ij**2, axis=2)
-    dist_cubed = dist_sq**1.5
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                acc[i] -= gm_values[j] * r_ij[i, j] / dist_cubed[i, j]
+    r_ij = positions[:, None, :] - positions[None, :, :]  # (n, n, 3)
+    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10  # 防止除0
+    np.fill_diagonal(dist_sq, np.inf)
+    dist_cubed = dist_sq * np.sqrt(dist_sq)
+    
+    factors = gm_values[None, :, None] / dist_cubed[:, :, None]  # (n, n, 1)
+    acc = -np.sum(r_ij * factors, axis=1)
     return acc
+
 
 # 微分方程
 def derivatives(t, y):
