@@ -41,6 +41,8 @@ MAX_STEP_TIME = 3600                    # simulate_with_event里面的检测周�
 
 RELATIVITY = True # 相对论修正开关
 
+MAX_SIN_ANGLE = 0.05
+
 # 误差分析间隔（秒）
 ERROR_EVAL_INTERVAL = 86400 * 30
 # 误差分析天体列表

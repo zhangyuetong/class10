@@ -20,6 +20,7 @@ from config import (
     START_DATE, TIME_SCALE, SIMULATION_YEARS, SECONDS_PER_YEAR,
     SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL, MAX_STEP_TIME, 
     RELATIVITY, 
+    MAX_SIN_ANGLE, 
     ERROR_EVAL_INTERVAL, ERROR_ANALYSIS_BODIES
 )
 
@@ -69,7 +70,7 @@ def near_alignment_cross(es_vec, em_vec):
     """
     cross_prod = np.cross(es_vec, em_vec)
     cross_mag = np.linalg.norm(cross_prod)
-    threshold = 1.49e11 * 3.84e8 * 0.1
+    threshold = 1.49e11 * 3.84e8 * MAX_SIN_ANGLE
     return cross_mag < threshold
 
 # ------------------- 初始化 -------------------
