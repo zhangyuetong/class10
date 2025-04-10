@@ -295,8 +295,14 @@ for idx, (name, times) in enumerate(zip(event_names, sol.t_events)):
         t1 = (dt_start + timedelta(seconds=start)).replace(microsecond=0)
         t2 = (dt_start + timedelta(seconds=end)).replace(microsecond=0)
         duration = str(t2 - t1)
-        print(f"{t1} ~ {t2} | {duration}")
-        eclipse_events[name].append({"start": str(t1), "end": str(t2), "duration": duration})
+        midpoint = (t1 + (t2 - t1)/2).replace(microsecond=0)  # 去除微秒
+        print(f"{t1} ~ {t2} | dur: {duration} | mid: {midpoint}")
+        eclipse_events[name].append({
+            "start": str(t1), 
+            "end": str(t2), 
+            "duration": duration,
+            "midpoint": str(midpoint)  # 将中点也存入JSON
+        })
 
 # 保存为 JSON（若不需要可去掉）
 with open("eclipse_events.json", "w", encoding="utf-8") as f:
