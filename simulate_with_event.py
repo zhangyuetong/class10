@@ -19,7 +19,8 @@ from config import (
     BODIES, GM_DICT, 
     START_DATE, TIME_SCALE, SIMULATION_YEARS, SECONDS_PER_YEAR,
     SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL, MAX_STEP_TIME, 
-    ERROR_EVAL_INTERVAL
+    RELATIVITY, 
+    ERROR_EVAL_INTERVAL, ERROR_ANALYSIS_BODIES
 )
 
 # ------------------- 几何判断函数 -------------------
@@ -157,7 +158,25 @@ events = [
 ]
 
 # ------------------- 加速度计算（向量化） -------------------
-def calculate_accelerations_vectorized(positions, velocities, gm_values):
+# 旧版（无相对论）
+def calculate_accelerations_vectorized(positions, gm_values):
+    """
+    利用 NumPy 广播一次性计算所有天体之间的万有引力加速度。
+    positions: shape (n, 3)
+    gm_values: shape (n,)
+    返回结果: shape (n, 3)
+    """
+    # r_ij[i,j] = positions[i] - positions[j]
+    r_ij = positions[:, None, :] - positions[None, :, :]  # (n, n, 3)
+    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10  # 防止除0
+    np.fill_diagonal(dist_sq, np.inf)  # 自身不计算
+    dist_cubed = dist_sq * np.sqrt(dist_sq)
+    
+    factors = gm_values[None, :, None] / dist_cubed[:, :, None]  # (n, n, 1)
+    acc = -np.sum(r_ij * factors, axis=1)
+    return acc
+# 新版（相对论）
+def calculate_accelerations_vectorized_relativity(positions, velocities, gm_values):
     """
     利用 NumPy 广播一次性计算所有天体之间的万有引力加速度 + 简化的一阶相对论修正。
     
@@ -245,7 +264,8 @@ def derivatives(t, y):
     pos, vel = state[:, :3], state[:, 3:]
 
     # 注意，这里 gm_values 不变
-    acc = calculate_accelerations_vectorized(pos, vel, gm_values)
+    
+    acc = calculate_accelerations_vectorized_relativity(pos, vel, gm_values) if RELATIVITY else calculate_accelerations_vectorized(pos, gm_values)
 
     dydt = np.zeros_like(state)
     dydt[:, :3] = vel
@@ -311,50 +331,55 @@ print("日食月食事件已保存至 eclipse_events.json")
 
 print(f"模拟完成，总用时 {time.time() - start_time:.2f} 秒")
 
+import math
+print("\n开始误差分析（多天体合成图）...")
 
-# ------------------- 误差分析（地球） -------------------
-print("\n开始误差分析（仅地球）...")
-
-# 1. 定期生成需要检查的时间点（秒）
 evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
-
-# 2. 在这些时间点上，通过 sol.sol(t_eval) 获得数值解中地球的位置
-#   sol.sol(...) 返回形状为 (6*body_count, len(t_eval)) 的数组
 n_bodies = len(BODIES)
-earth_pos_sim = np.zeros((len(evaluation_times), 3))
+num_targets = len(ERROR_ANALYSIS_BODIES)
 
-for i, t_eval in enumerate(evaluation_times):
-    # 整个系统状态(6*n_bodies,) -> 每个天体 6 个分量
-    full_state = sol.sol(t_eval)  # shape = (6*n_bodies,)
-    # 地球的索引范围
-    start_idx = earth_idx * 6
-    end_idx = start_idx + 3
-    earth_pos_sim[i, :] = full_state[start_idx:end_idx]
+# 准备画布尺寸（每行最多3个）
+cols = 3
+rows = math.ceil(num_targets / cols)
+fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
+axes = axes.flatten()
 
-# 3. 获取标准星历下的地球位置（de440），并比较两者差距
-earth_pos_std = np.zeros((len(evaluation_times), 3))
+for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
+    idx = BODIES.index(body_name)
+    print(f"分析 {body_name.capitalize()} 的位置误差...")
 
-for i, t_eval in enumerate(evaluation_times):
-    # 当前的绝对时刻（Astropy Time）
-    current_time = t0 + t_eval * u.s
-    pos_std, _ = get_body_barycentric_posvel('earth', current_time)
-    earth_pos_std[i, :] = pos_std.xyz.to(u.m).value
+    # 数值模拟位置
+    sim_pos = np.zeros((len(evaluation_times), 3))
+    for j, t_eval in enumerate(evaluation_times):
+        full_state = sol.sol(t_eval)
+        sim_pos[j, :] = full_state[idx * 6: idx * 6 + 3]
 
-# 4. 计算误差（欧几里得距离）
-diff = earth_pos_sim - earth_pos_std
-errors = np.linalg.norm(diff, axis=1)  # 每个时刻的三维差值的模
-errors_km = errors / 1000.0
+    # 星历位置
+    std_pos = np.zeros_like(sim_pos)
+    for j, t_eval in enumerate(evaluation_times):
+        current_time = t0 + t_eval * u.s
+        pos_std, _ = get_body_barycentric_posvel(body_name, current_time)
+        std_pos[j, :] = pos_std.xyz.to(u.m).value
 
-# 5. 绘图：横轴是年，纵轴是误差（km）
-time_years = evaluation_times / SECONDS_PER_YEAR
+    # 计算误差（单位：km）
+    errors = np.linalg.norm(sim_pos - std_pos, axis=1) / 1000.0
+    time_years = evaluation_times / SECONDS_PER_YEAR
 
-plt.figure()
-plt.plot(time_years, errors_km)
-plt.xlabel("Time (years)")
-plt.ylabel("Position Error (km)")
-plt.title("Earth Position Error vs. DE440")
-plt.grid(True)
-plt.savefig("earth_error.png")
+    # 画到对应子图
+    ax = axes[i]
+    ax.plot(time_years, errors)
+    ax.set_title(f"{body_name.capitalize()}")
+    ax.set_xlabel("Years")
+    ax.set_ylabel("Error (km)")
+    ax.grid(True)
+
+# 清理多余子图（如果有空格）
+for j in range(num_targets, len(axes)):
+    fig.delaxes(axes[j])
+
+fig.suptitle("Position Error vs DE440 for Selected Bodies", fontsize=16)
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+plt.savefig("all_bodies_error.png")
 plt.show()
 
-print("误差分析结束！")
+print("误差图已保存为 all_bodies_error.png")
