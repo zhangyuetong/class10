@@ -15,11 +15,11 @@ solar_system_ephemeris.set('de440')
 
 # 导入配置(示例)
 from config import (
-    C_LIGHT,
     BODIES, GM_DICT, 
     START_DATE, TIME_SCALE, SIMULATION_YEARS, SECONDS_PER_YEAR,
     SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL, MAX_STEP_TIME, 
-    RELATIVITY, 
+    RELATIVITY_SWITCH, C_LIGHT,
+    J2_SWITCH, J2_DICT, RADIUS_DICT,
     MAX_SIN_ANGLE, 
     ERROR_EVAL_INTERVAL, ERROR_ANALYSIS_BODIES
 )
@@ -87,6 +87,8 @@ for body in BODIES:
 
 y0 = np.hstack(init_state)
 gm_values = np.array([GM_DICT[body] for body in BODIES])
+j2_array = np.array([J2_DICT[body] for body in BODIES])
+r_array = np.array([RADIUS_DICT[body] for body in BODIES])
 
 # 索引
 sun_idx = BODIES.index("sun")
@@ -173,86 +175,56 @@ events = [
 
 # ------------------- 加速度计算（向量化） -------------------
 def calculate_accelerations_vectorized(positions, velocities, gm_values):
-    """
-    利用 NumPy 广播一次性计算所有天体之间的万有引力加速度 + 简化的一阶相对论修正。
-    
-    Parameters
-    ----------
-    positions: np.ndarray of shape (n, 3)
-        所有天体的空间坐标
-    velocities: np.ndarray of shape (n, 3)
-        所有天体的速度向量
-    gm_values: np.ndarray of shape (n,)
-        每个天体的 GM (G*mass)，与 positions/velocities 对应
-
-    Returns
-    -------
-    acc_total : np.ndarray of shape (n, 3)
-        每个天体的总加速度 (牛顿 + 简化1PN)
-    """
-    n = len(positions)
-    
     # ------------------- 1) 牛顿引力 -------------------
-    # r_ij[i,j,:] = positions[i] - positions[j]
     r_ij = positions[:, None, :] - positions[None, :, :]  # (n, n, 3)
     
-    # 对角线自己减自己 -> 0，需要防止除零
-    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10            # (n, n)
-    np.fill_diagonal(dist_sq, np.inf)                    # 自身不参与
+    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10             # (n, n)
+    np.fill_diagonal(dist_sq, np.inf)                     # 避免除零，自身不参与
     
-    dist_cubed = dist_sq * np.sqrt(dist_sq)              # r^3
-    
-    # (n, n, 1): 每个 (i, j) 对应 GM_j / r^3
-    factors_newton = gm_values[None, :, None] / dist_cubed[:, :, None]
-    
-    # 求和得到对 i 的合加速度： a_i = - sum_j [ GM_j / r^3 * (r_i - r_j) ]
-    acc_newton = -np.sum(r_ij * factors_newton, axis=1)  # (n, 3)
-    acc_total = acc_newton
-    
-    # ------------------- 2) 简化 1PN 修正 -------------------
-    if RELATIVITY:
-        # 相对速度
-        v_ij = velocities[:, None, :] - velocities[None, :, :]  # (n, n, 3)
-        
-        # v^2_ij
-        v2_ij = np.sum(v_ij**2, axis=2)  # (n, n)
-        
-        # r · v
-        r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)  # (n, n)
+    dist = np.sqrt(dist_sq)                               # r
+    dist_cubed = dist_sq * dist                           # r^3
 
-        # 距离 r (先前有 dist_sq)
-        dist = np.sqrt(dist_sq)                  # (n, n)
-        
-        # 这里把 GM_j / (c^2 * r^3) 做成 factor
+    factors_newton = gm_values[None, :, None] / dist_cubed[:, :, None]  # (n, n, 1)
+    acc_newton = -np.sum(r_ij * factors_newton, axis=1)                 # (n, 3)
+    acc_total = acc_newton
+
+    # ------------------- 2) 简化 1PN 修正 -------------------
+    if RELATIVITY_SWITCH:
+        v_ij = velocities[:, None, :] - velocities[None, :, :]       # (n, n, 3)
+        v2_ij = np.sum(v_ij**2, axis=2)                               # (n, n)
+        r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)                      # (n, n)
+
         c2 = C_LIGHT**2
-        factor_1pn = gm_values[None, :] / (c2 * dist**3)      # shape (n, n)
-        
-        # 便于后面与三维向量相乘，把它变成 (n, n, 1)
-        factor_1pn = factor_1pn[:, :, None]                   # (n, n, 1)
-        
-        # 需要 GM_j / r，这里也用广播
-        GMj_over_r = gm_values[None, :] / dist                # (n, n)
-        # 计算 (4GM_j/r - v^2)
-        tmp = 4.0 * GMj_over_r - v2_ij                         # (n, n)
-        
-        # 扩展以便与 r_ij 相乘
-        tmp = tmp[:, :, None]                                  # (n, n, 1)
-        
-        # term1 = (4GM_j/r - v^2)*r_ij
-        term1 = tmp * r_ij  # (n, n, 3)
-        
-        # 再加上 4(r · v)*v_ij
-        # 注意 r_dot_v_ij shape = (n, n) -> expand to (n, n, 1)
+        factor_1pn = gm_values[None, :] / (c2 * dist**3)              # (n, n)
+        factor_1pn = factor_1pn[:, :, None]                           # (n, n, 1)
+
+        GMj_over_r = gm_values[None, :] / dist                        # (n, n)
+        tmp = 4.0 * GMj_over_r - v2_ij                                # (n, n)
+        tmp = tmp[:, :, None]                                         # (n, n, 1)
+
+        term1 = tmp * r_ij
         term1 += (4.0 * r_dot_v_ij[:, :, None]) * v_ij
-        
-        # 得到单对 (i->j) 的修正加速度 a_rel_ij
-        a_1pn_ij = factor_1pn * term1  # (n, n, 3)
-        
-        # 对 j 累加，得到每个 i 的 1PN 合加速度
-        acc_1pn = np.sum(a_1pn_ij, axis=1)  # (n, 3)
-        
-        # ------------------- 3) 总加速度 = 牛顿 + 1PN -------------------
+
+        a_1pn_ij = factor_1pn * term1
+        acc_1pn = np.sum(a_1pn_ij, axis=1)                            # (n, 3)
         acc_total += acc_1pn
+
+    # ------------------- 3) J2 项 -------------------
+    if J2_SWITCH:
+        z_ij = r_ij[..., 2]                                           # (n, n)
+        bracket_ij = 5.0 * (z_ij**2 / dist_sq) - 1.0                  # (n, n)
+
+        J2_j = j2_array[None, :]                                      # (1, n)
+        GM_j = gm_values[None, :]                                     # (1, n)
+        R_j2 = r_array[None, :]**2                                    # (1, n)
+
+        factor_j2_ij = (1.5 * J2_j * GM_j * R_j2) / (dist**5)         # (n, n)
+        factor_j2_ij *= bracket_ij                                    # (n, n)
+
+        a_j2_ij = factor_j2_ij[..., None] * r_ij                      # (n, n, 3)
+        acc_j2 = np.sum(a_j2_ij, axis=1)                              # (n, 3)
+        acc_total += acc_j2
+
     return acc_total
 
 # ------------------- 微分方程 -------------------
