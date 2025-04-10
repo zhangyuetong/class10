@@ -5,7 +5,7 @@
 # 时间配置
 START_DATE = "2025-01-01T00:00:00"  # 模拟开始时间
 TIME_SCALE = 'utc'  # 时间尺度 (可选: 'utc', 'tt', 'tdb')
-SIMULATION_YEARS = 50                 # 模拟时长（年）- 增加时长以便观察更明显的变化
+SIMULATION_YEARS = 5                 # 模拟时长（年）- 增加时长以便观察更明显的变化
 SECONDS_PER_YEAR = 365.24 * 86400        # 每年的秒数
 
 # 天体配置 - 包含太阳和所有行星

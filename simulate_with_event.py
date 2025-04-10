@@ -172,25 +172,7 @@ events = [
 ]
 
 # ------------------- 加速度计算（向量化） -------------------
-# 旧版（无相对论）
-def calculate_accelerations_vectorized(positions, gm_values):
-    """
-    利用 NumPy 广播一次性计算所有天体之间的万有引力加速度。
-    positions: shape (n, 3)
-    gm_values: shape (n,)
-    返回结果: shape (n, 3)
-    """
-    # r_ij[i,j] = positions[i] - positions[j]
-    r_ij = positions[:, None, :] - positions[None, :, :]  # (n, n, 3)
-    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10  # 防止除0
-    np.fill_diagonal(dist_sq, np.inf)  # 自身不计算
-    dist_cubed = dist_sq * np.sqrt(dist_sq)
-    
-    factors = gm_values[None, :, None] / dist_cubed[:, :, None]  # (n, n, 1)
-    acc = -np.sum(r_ij * factors, axis=1)
-    return acc
-# 新版（相对论）
-def calculate_accelerations_vectorized_relativity(positions, velocities, gm_values):
+def calculate_accelerations_vectorized(positions, velocities, gm_values):
     """
     利用 NumPy 广播一次性计算所有天体之间的万有引力加速度 + 简化的一阶相对论修正。
     
@@ -225,50 +207,52 @@ def calculate_accelerations_vectorized_relativity(positions, velocities, gm_valu
     
     # 求和得到对 i 的合加速度： a_i = - sum_j [ GM_j / r^3 * (r_i - r_j) ]
     acc_newton = -np.sum(r_ij * factors_newton, axis=1)  # (n, 3)
+    acc_total = acc_newton
     
     # ------------------- 2) 简化 1PN 修正 -------------------
-    # 相对速度
-    v_ij = velocities[:, None, :] - velocities[None, :, :]  # (n, n, 3)
-    
-    # v^2_ij
-    v2_ij = np.sum(v_ij**2, axis=2)  # (n, n)
-    
-    # r · v
-    r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)  # (n, n)
+    if RELATIVITY:
+        # 相对速度
+        v_ij = velocities[:, None, :] - velocities[None, :, :]  # (n, n, 3)
+        
+        # v^2_ij
+        v2_ij = np.sum(v_ij**2, axis=2)  # (n, n)
+        
+        # r · v
+        r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)  # (n, n)
 
-    # 距离 r (先前有 dist_sq)
-    dist = np.sqrt(dist_sq)                  # (n, n)
-    
-    # 这里把 GM_j / (c^2 * r^3) 做成 factor
-    c2 = C_LIGHT**2
-    factor_1pn = gm_values[None, :] / (c2 * dist**3)      # shape (n, n)
-    
-    # 便于后面与三维向量相乘，把它变成 (n, n, 1)
-    factor_1pn = factor_1pn[:, :, None]                   # (n, n, 1)
-    
-    # 需要 GM_j / r，这里也用广播
-    GMj_over_r = gm_values[None, :] / dist                # (n, n)
-    # 计算 (4GM_j/r - v^2)
-    tmp = 4.0 * GMj_over_r - v2_ij                         # (n, n)
-    
-    # 扩展以便与 r_ij 相乘
-    tmp = tmp[:, :, None]                                  # (n, n, 1)
-    
-    # term1 = (4GM_j/r - v^2)*r_ij
-    term1 = tmp * r_ij  # (n, n, 3)
-    
-    # 再加上 4(r · v)*v_ij
-    # 注意 r_dot_v_ij shape = (n, n) -> expand to (n, n, 1)
-    term1 += (4.0 * r_dot_v_ij[:, :, None]) * v_ij
-    
-    # 得到单对 (i->j) 的修正加速度 a_rel_ij
-    a_1pn_ij = factor_1pn * term1  # (n, n, 3)
-    
-    # 对 j 累加，得到每个 i 的 1PN 合加速度
-    acc_1pn = np.sum(a_1pn_ij, axis=1)  # (n, 3)
-    
-    # ------------------- 3) 总加速度 = 牛顿 + 1PN -------------------
-    acc_total = acc_newton + acc_1pn
+        # 距离 r (先前有 dist_sq)
+        dist = np.sqrt(dist_sq)                  # (n, n)
+        
+        # 这里把 GM_j / (c^2 * r^3) 做成 factor
+        c2 = C_LIGHT**2
+        factor_1pn = gm_values[None, :] / (c2 * dist**3)      # shape (n, n)
+        
+        # 便于后面与三维向量相乘，把它变成 (n, n, 1)
+        factor_1pn = factor_1pn[:, :, None]                   # (n, n, 1)
+        
+        # 需要 GM_j / r，这里也用广播
+        GMj_over_r = gm_values[None, :] / dist                # (n, n)
+        # 计算 (4GM_j/r - v^2)
+        tmp = 4.0 * GMj_over_r - v2_ij                         # (n, n)
+        
+        # 扩展以便与 r_ij 相乘
+        tmp = tmp[:, :, None]                                  # (n, n, 1)
+        
+        # term1 = (4GM_j/r - v^2)*r_ij
+        term1 = tmp * r_ij  # (n, n, 3)
+        
+        # 再加上 4(r · v)*v_ij
+        # 注意 r_dot_v_ij shape = (n, n) -> expand to (n, n, 1)
+        term1 += (4.0 * r_dot_v_ij[:, :, None]) * v_ij
+        
+        # 得到单对 (i->j) 的修正加速度 a_rel_ij
+        a_1pn_ij = factor_1pn * term1  # (n, n, 3)
+        
+        # 对 j 累加，得到每个 i 的 1PN 合加速度
+        acc_1pn = np.sum(a_1pn_ij, axis=1)  # (n, 3)
+        
+        # ------------------- 3) 总加速度 = 牛顿 + 1PN -------------------
+        acc_total += acc_1pn
     return acc_total
 
 # ------------------- 微分方程 -------------------
@@ -279,7 +263,7 @@ def derivatives(t, y):
 
     # 注意，这里 gm_values 不变
     
-    acc = calculate_accelerations_vectorized_relativity(pos, vel, gm_values) if RELATIVITY else calculate_accelerations_vectorized(pos, gm_values)
+    acc = calculate_accelerations_vectorized(pos, vel, gm_values)
 
     dydt = np.zeros_like(state)
     dydt[:, :3] = vel
