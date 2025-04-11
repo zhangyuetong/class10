@@ -37,18 +37,6 @@ def body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
     critical_distance = np.tan(half_angle) * horizontal_distance + body_radius / np.cos(half_angle)
     return perpendicular_distance - critical_distance
 
-def semi_body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
-    """
-    注意到天体的另外一半被自己挡住了，所以考虑天体受光面（不妨设平行光）是否进入某个圆锥区域（半影/本影等）
-    因此就不需要/cos
-    若返回值 < 0 则说明“在锥内”
-    """
-    cone_tip_to_body = body_pos - cone_tip
-    proj_point = cone_tip + np.dot(cone_tip_to_body, cone_axis) * cone_axis / np.linalg.norm(cone_axis)**2
-    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
-    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
-    critical_distance = np.tan(half_angle) * horizontal_distance + body_radius
-    return perpendicular_distance - critical_distance
 
 def body_totally_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
     """
@@ -135,12 +123,12 @@ def eclipse_event_factory(event_type):
             if event_type == 'solar_total':
                 return np.linalg.norm(umbra_tip - ep) - R_earth
             elif event_type == 'solar_partial':
-                return semi_body_in_cone(ep, R_earth, penumbra_tip, umbra_dir, penumbra_angle)
+                return body_in_cone(ep, R_earth, penumbra_tip, umbra_dir, penumbra_angle)
             elif event_type == 'solar_annular':
                 # 假设 umbra_tip 到达不到地球时可能发生环食
                 if np.linalg.norm(umbra_tip - ep) < R_earth:
                     return 1
-                return semi_body_in_cone(ep, R_earth, umbra_tip, umbra_dir, umbra_angle)
+                return body_in_cone(ep, R_earth, umbra_tip, umbra_dir, umbra_angle)
 
         elif 'lunar' in event_type:
             # 月食，以地球为“遮挡者”
@@ -154,9 +142,9 @@ def eclipse_event_factory(event_type):
             if event_type == 'lunar_total':
                 return body_totally_in_cone(mp, R_moon, earth_umbra_tip, earth_umbra_dir, earth_umbra_angle)
             elif event_type == 'lunar_partial':
-                return semi_body_in_cone(mp, R_moon, earth_umbra_tip, earth_umbra_dir, earth_umbra_angle)
+                return body_in_cone(mp, R_moon, earth_umbra_tip, earth_umbra_dir, earth_umbra_angle)
             elif event_type == 'lunar_penumbral':
-                return semi_body_in_cone(mp, R_moon, earth_penumbra_tip, earth_umbra_dir, earth_penumbra_angle)
+                return body_in_cone(mp, R_moon, earth_penumbra_tip, earth_umbra_dir, earth_penumbra_angle)
 
         return 1
 
