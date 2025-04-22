@@ -290,11 +290,11 @@ print("日食月食事件已保存至 eclipse_events.json")
 print(f"模拟完成，总用时 {time.time() - start_time:.2f} 秒")
 
 import math
-print("\n开始误差分析（多天体分量误差图）...")
+print("\n开始误差分析（多天体分量误差图，包括质心）...")
 
 evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
 n_bodies = len(BODIES)
-num_targets = len(ERROR_ANALYSIS_BODIES)
+num_targets = len(ERROR_ANALYSIS_BODIES) + 1  # 多加一个用于质心
 
 # 准备画布尺寸（每行最多3个）
 cols = 3
@@ -302,6 +302,7 @@ rows = math.ceil(num_targets / cols)
 fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
 axes = axes.flatten()
 
+# ------------------- 分析各天体误差 -------------------
 for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
     idx = BODIES.index(body_name)
     print(f"分析 {body_name.capitalize()} 的位置误差...")
@@ -321,7 +322,7 @@ for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
 
     # 误差计算（单位：km）
     diff = (sim_pos - std_pos) / 1000.0
-    abs_error = np.linalg.norm(diff, axis=1)  # 绝对误差
+    abs_error = np.linalg.norm(diff, axis=1)
     error_x = diff[:, 0]
     error_y = diff[:, 1]
     error_z = diff[:, 2]
@@ -329,17 +330,57 @@ for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
 
     # 绘图
     ax = axes[i]
-    ax.plot(time_years, abs_error, color='black', label='Absolute Error', linewidth='0.5')
-    ax.plot(time_years, error_x, color='red', label='X Error', linewidth='0.5')
-    ax.plot(time_years, error_y, color='green', label='Y Error', linewidth='0.5')
-    ax.plot(time_years, error_z, color='blue', label='Z Error', linewidth='0.5')
+    ax.plot(time_years, abs_error, color='black', label='Absolute Error', linewidth=0.5)
+    ax.plot(time_years, error_x, color='red', label='X Error', linewidth=0.5)
+    ax.plot(time_years, error_y, color='green', label='Y Error', linewidth=0.5)
+    ax.plot(time_years, error_z, color='blue', label='Z Error', linewidth=0.5)
 
     ax.set_title(f"{body_name.capitalize()}")
     ax.set_xlabel("Years")
     ax.set_ylabel("Error (km)")
     ax.grid(True)
 
-# 清理多余子图
+# ------------------- 添加质心误差分析 -------------------
+print("分析系统质心的位置误差...")
+
+sim_cm_pos = np.zeros((len(evaluation_times), 3))
+std_cm_pos = np.zeros_like(sim_cm_pos)
+
+mass_arr = np.array([GM_DICT[body] for body in BODIES]) / 6.67430e-11  # GM = G*M → M = GM/G
+
+for j, t_eval in enumerate(evaluation_times):
+    full_state = sol.sol(t_eval).reshape((n_bodies, 6))
+    sim_positions = full_state[:, :3]
+    sim_cm_pos[j] = np.average(sim_positions, axis=0, weights=mass_arr)
+
+    std_positions = []
+    for body in BODIES:
+        current_time = t0 + t_eval * u.s
+        pos_std, _ = get_body_barycentric_posvel(body, current_time)
+        std_positions.append(pos_std.xyz.to(u.m).value)
+    std_positions = np.array(std_positions)
+    std_cm_pos[j] = np.average(std_positions, axis=0, weights=mass_arr)
+
+# 误差（单位：km）
+diff_cm = (sim_cm_pos - std_cm_pos) / 1000.0
+abs_error_cm = np.linalg.norm(diff_cm, axis=1)
+error_x_cm = diff_cm[:, 0]
+error_y_cm = diff_cm[:, 1]
+error_z_cm = diff_cm[:, 2]
+
+bary_ax_idx = len(ERROR_ANALYSIS_BODIES)
+ax = axes[bary_ax_idx]
+ax.plot(time_years, abs_error_cm, color='black', label='Absolute Error', linewidth=0.5)
+ax.plot(time_years, error_x_cm, color='red', label='X Error', linewidth=0.5)
+ax.plot(time_years, error_y_cm, color='green', label='Y Error', linewidth=0.5)
+ax.plot(time_years, error_z_cm, color='blue', label='Z Error', linewidth=0.5)
+
+ax.set_title("Barycenter")
+ax.set_xlabel("Years")
+ax.set_ylabel("Error (km)")
+ax.grid(True)
+
+# ------------------- 清理多余子图 -------------------
 for j in range(num_targets, len(axes)):
     fig.delaxes(axes[j])
 
@@ -348,4 +389,4 @@ plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 plt.savefig("all_bodies_error_components.png")
 plt.show()
 
-print("误差图已保存为 all_bodies_error_components.png")
+print("总误差图已保存为 all_bodies_error_components.png")
