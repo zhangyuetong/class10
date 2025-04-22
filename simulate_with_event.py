@@ -292,22 +292,33 @@ print(f"模拟完成，总用时 {time.time() - start_time:.2f} 秒")
 import math
 print("\n开始误差分析（多天体分量误差图，包括质心）...")
 
-evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
-n_bodies = len(BODIES)
-num_targets = len(ERROR_ANALYSIS_BODIES) + 1  # 多加一个用于质心
+# -------------------------------------------------------------
+# 基本时间轴与画布配置
+# -------------------------------------------------------------
 
-# 准备画布尺寸（每行最多3个）
+evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
+
+time_years = evaluation_times / SECONDS_PER_YEAR
+n_bodies = len(BODIES)
+num_targets = len(ERROR_ANALYSIS_BODIES) + 1  # 额外加一个质心
+
+# 每行最多 3 张子图
 cols = 3
 rows = math.ceil(num_targets / cols)
 fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
 axes = axes.flatten()
 
-# ------------------- 分析各天体误差 -------------------
+# -------------------------------------------------------------
+# 误差分析：各天体相对于 DE440
+# -------------------------------------------------------------
+
+diff_dict = {}  # 保存各天体的误差向量，方便后续去质心处理
+
 for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
     idx = BODIES.index(body_name)
     print(f"分析 {body_name.capitalize()} 的位置误差...")
 
-    # 数值模拟位置
+    # 数值解的位置
     sim_pos = np.zeros((len(evaluation_times), 3))
     for j, t_eval in enumerate(evaluation_times):
         full_state = sol.sol(t_eval)
@@ -320,33 +331,35 @@ for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
         pos_std, _ = get_body_barycentric_posvel(body_name, current_time)
         std_pos[j, :] = pos_std.xyz.to(u.m).value
 
-    # 误差计算（单位：km）
+    # 误差 (km)
     diff = (sim_pos - std_pos) / 1000.0
-    abs_error = np.linalg.norm(diff, axis=1)
-    error_x = diff[:, 0]
-    error_y = diff[:, 1]
-    error_z = diff[:, 2]
-    time_years = evaluation_times / SECONDS_PER_YEAR
+    diff_dict[body_name] = diff              # --- 关键：缓存误差向量
 
-    # 绘图
+    abs_error = np.linalg.norm(diff, axis=1)
+    error_x, error_y, error_z = diff.T
+
+    # 绘制
     ax = axes[i]
-    ax.plot(time_years, abs_error, color='black', label='Absolute Error', linewidth=0.5)
-    ax.plot(time_years, error_x, color='red', label='X Error', linewidth=0.5)
-    ax.plot(time_years, error_y, color='green', label='Y Error', linewidth=0.5)
-    ax.plot(time_years, error_z, color='blue', label='Z Error', linewidth=0.5)
+    ax.plot(time_years, abs_error, label='Abs', linewidth=0.5, color='black')
+    ax.plot(time_years, error_x,  label='X',   linewidth=0.5, color='red')
+    ax.plot(time_years, error_y,  label='Y',   linewidth=0.5, color='green')
+    ax.plot(time_years, error_z,  label='Z',   linewidth=0.5, color='blue')
 
     ax.set_title(f"{body_name.capitalize()}")
     ax.set_xlabel("Years")
     ax.set_ylabel("Error (km)")
     ax.grid(True)
 
-# ------------------- 添加质心误差分析 -------------------
+# -------------------------------------------------------------
+# 质心误差
+# -------------------------------------------------------------
+
 print("分析系统质心的位置误差...")
 
 sim_cm_pos = np.zeros((len(evaluation_times), 3))
 std_cm_pos = np.zeros_like(sim_cm_pos)
 
-mass_arr = np.array([GM_DICT[body] for body in BODIES]) / 6.67430e-11  # GM = G*M → M = GM/G
+mass_arr = np.array([GM_DICT[body] for body in BODIES]) / 6.67430e-11  # M = GM/G
 
 for j, t_eval in enumerate(evaluation_times):
     full_state = sol.sol(t_eval).reshape((n_bodies, 6))
@@ -361,26 +374,30 @@ for j, t_eval in enumerate(evaluation_times):
     std_positions = np.array(std_positions)
     std_cm_pos[j] = np.average(std_positions, axis=0, weights=mass_arr)
 
-# 误差（单位：km）
+# 质心误差 (km)
 diff_cm = (sim_cm_pos - std_cm_pos) / 1000.0
 abs_error_cm = np.linalg.norm(diff_cm, axis=1)
-error_x_cm = diff_cm[:, 0]
-error_y_cm = diff_cm[:, 1]
-error_z_cm = diff_cm[:, 2]
+error_x_cm, error_y_cm, error_z_cm = diff_cm.T
 
+diff_dict["barycenter"] = diff_cm  # 方便检验
+
+# 绘制质心误差
 bary_ax_idx = len(ERROR_ANALYSIS_BODIES)
 ax = axes[bary_ax_idx]
-ax.plot(time_years, abs_error_cm, color='black', label='Absolute Error', linewidth=0.5)
-ax.plot(time_years, error_x_cm, color='red', label='X Error', linewidth=0.5)
-ax.plot(time_years, error_y_cm, color='green', label='Y Error', linewidth=0.5)
-ax.plot(time_years, error_z_cm, color='blue', label='Z Error', linewidth=0.5)
+ax.plot(time_years, abs_error_cm, label='Abs', linewidth=0.5, color='black')
+ax.plot(time_years, error_x_cm,   label='X',   linewidth=0.5, color='red')
+ax.plot(time_years, error_y_cm,   label='Y',   linewidth=0.5, color='green')
+ax.plot(time_years, error_z_cm,   label='Z',   linewidth=0.5, color='blue')
 
 ax.set_title("Barycenter")
 ax.set_xlabel("Years")
 ax.set_ylabel("Error (km)")
 ax.grid(True)
 
-# ------------------- 清理多余子图 -------------------
+# -------------------------------------------------------------
+# 清理多余子图并保存
+# -------------------------------------------------------------
+
 for j in range(num_targets, len(axes)):
     fig.delaxes(axes[j])
 
@@ -390,3 +407,39 @@ plt.savefig("all_bodies_error_components.png")
 plt.show()
 
 print("总误差图已保存为 all_bodies_error_components.png")
+
+# =============================================================
+# 追加：去质心误差 (Δr_body − Δr_CM)
+# =============================================================
+
+print("\n开始绘制『减去质心误差』的新图...")
+
+fig2, axes2 = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
+axes2 = axes2.flatten()
+
+for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
+    diff_rel = diff_dict[body_name] - diff_cm
+    abs_error_rel = np.linalg.norm(diff_rel, axis=1)
+    err_x_rel, err_y_rel, err_z_rel = diff_rel.T
+
+    ax2 = axes2[i]
+    ax2.plot(time_years, abs_error_rel, linewidth=0.5, label='Abs', color='black')
+    ax2.plot(time_years, err_x_rel,  linewidth=0.5, label='X', color='red')
+    ax2.plot(time_years, err_y_rel,  linewidth=0.5, label='Y', color='green')
+    ax2.plot(time_years, err_z_rel,  linewidth=0.5, label='Z', color='blue')
+
+    ax2.set_title(f"{body_name.capitalize()} – Δr − Δr_CM")
+    ax2.set_xlabel("Years")
+    ax2.set_ylabel("Residual Error (km)")
+    ax2.grid(True)
+
+# 删除多余子图
+for j in range(len(ERROR_ANALYSIS_BODIES), len(axes2)):
+    fig2.delaxes(axes2[j])
+
+fig2.suptitle("Position Error minus Barycenter Error", fontsize=16)
+plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+plt.savefig("error_minus_barycenter.png")
+plt.show()
+
+print("新图已保存为 error_minus_barycenter.png")
