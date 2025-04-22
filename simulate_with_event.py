@@ -290,7 +290,7 @@ print("日食月食事件已保存至 eclipse_events.json")
 print(f"模拟完成，总用时 {time.time() - start_time:.2f} 秒")
 
 import math
-print("\n开始误差分析（多天体合成图）...")
+print("\n开始误差分析（多天体分量误差图）...")
 
 evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
 n_bodies = len(BODIES)
@@ -319,25 +319,33 @@ for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
         pos_std, _ = get_body_barycentric_posvel(body_name, current_time)
         std_pos[j, :] = pos_std.xyz.to(u.m).value
 
-    # 计算误差（单位：km）
-    errors = np.linalg.norm(sim_pos - std_pos, axis=1) / 1000.0
+    # 误差计算（单位：km）
+    diff = (sim_pos - std_pos) / 1000.0
+    abs_error = np.linalg.norm(diff, axis=1)  # 绝对误差
+    error_x = diff[:, 0]
+    error_y = diff[:, 1]
+    error_z = diff[:, 2]
     time_years = evaluation_times / SECONDS_PER_YEAR
 
-    # 画到对应子图
+    # 绘图
     ax = axes[i]
-    ax.plot(time_years, errors)
+    ax.plot(time_years, abs_error, color='black', label='Absolute Error', linewidth='0.5')
+    ax.plot(time_years, error_x, color='red', label='X Error', linewidth='0.5')
+    ax.plot(time_years, error_y, color='green', label='Y Error', linewidth='0.5')
+    ax.plot(time_years, error_z, color='blue', label='Z Error', linewidth='0.5')
+
     ax.set_title(f"{body_name.capitalize()}")
     ax.set_xlabel("Years")
     ax.set_ylabel("Error (km)")
     ax.grid(True)
 
-# 清理多余子图（如果有空格）
+# 清理多余子图
 for j in range(num_targets, len(axes)):
     fig.delaxes(axes[j])
 
-fig.suptitle("Position Error vs DE440 for Selected Bodies", fontsize=16)
+fig.suptitle("Position Error Components vs DE440", fontsize=16)
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("all_bodies_error.png")
+plt.savefig("all_bodies_error_components.png")
 plt.show()
 
-print("误差图已保存为 all_bodies_error.png")
+print("误差图已保存为 all_bodies_error_components.png")
