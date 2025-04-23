@@ -124,28 +124,58 @@ def calc_acc_numba(pos, vel,
             dist      = math.sqrt(dist_sq)
             dist_cube = dist_sq * dist
 
+            nx = dx / dist
+            ny = dy / dist
+            nz = dz / dist
+
             factor = gm_values[j] / dist_cube
             acc[i, 0] -= factor * dx
             acc[i, 1] -= factor * dy
             acc[i, 2] -= factor * dz
 
-            # -------- 1 PN 相对论修正 --------
+            # # -------- 1 PN 相对论修正 -------- 这是旧的相对论
+            # if relativity:
+            #     dvx = vel[i, 0] - vel[j, 0]
+            #     dvy = vel[i, 1] - vel[j, 1]
+            #     dvz = vel[i, 2] - vel[j, 2]
+
+            #     v2 = dvx*dvx + dvy*dvy + dvz*dvz
+            #     r_dot_v = dx*dvx + dy*dvy + dz*dvz
+            #     GMj_over_r = gm_values[j] / dist
+            #     tmp = 4.0 * GMj_over_r - v2
+
+            #     fac_1pn = gm_values[j] / (c2 * dist_cube)
+
+            #     acc[i, 0] += fac_1pn * (tmp * dx + 4.0 * r_dot_v * dvx)
+            #     acc[i, 1] += fac_1pn * (tmp * dy + 4.0 * r_dot_v * dvy)
+            #     acc[i, 2] += fac_1pn * (tmp * dz + 4.0 * r_dot_v * dvz)
+
+            # --- 1PN 修正项 ---
             if relativity:
+                # 速度差
                 dvx = vel[i, 0] - vel[j, 0]
                 dvy = vel[i, 1] - vel[j, 1]
                 dvz = vel[i, 2] - vel[j, 2]
 
-                v2 = dvx*dvx + dvy*dvy + dvz*dvz
-                r_dot_v = dx*dvx + dy*dvy + dz*dvz
+                # 各种向量大小与内积
+                vi2 = vel[i, 0]**2 + vel[i, 1]**2 + vel[i, 2]**2
+                vj2 = vel[j, 0]**2 + vel[j, 1]**2 + vel[j, 2]**2
+                vi_dot_vj = vel[i, 0]*vel[j, 0] + vel[i, 1]*vel[j, 1] + vel[i, 2]*vel[j, 2]
+                n_dot_vj = nx*vel[j, 0] + ny*vel[j, 1] + nz*vel[j, 2]
+                n_dot_vi = nx*vel[i, 0] + ny*vel[i, 1] + nz*vel[i, 2]
+
                 GMj_over_r = gm_values[j] / dist
-                tmp = 4.0 * GMj_over_r - v2
 
-                fac_1pn = gm_values[j] / (c2 * dist_cube)
+                prefac = gm_values[j] / (c2 * dist_cube)
 
-                acc[i, 0] += fac_1pn * (tmp * dx + 4.0 * r_dot_v * dvx)
-                acc[i, 1] += fac_1pn * (tmp * dy + 4.0 * r_dot_v * dvy)
-                acc[i, 2] += fac_1pn * (tmp * dz + 4.0 * r_dot_v * dvz)
+                # 方向项（相对加速度修正主项）
+                dir_term = (4 * GMj_over_r - vi2 - 2 * vj2 + 4 * vi_dot_vj + 1.5 * n_dot_vj * n_dot_vj)
+                vel_term = (4 * n_dot_vi - 3 * n_dot_vj)
 
+                acc[i, 0] += prefac * (dir_term * dx + vel_term * dvx * dist)
+                acc[i, 1] += prefac * (dir_term * dy + vel_term * dvy * dist)
+                acc[i, 2] += prefac * (dir_term * dz + vel_term * dvz * dist)
+                
             # -------- J2 扁率项 --------
             if use_j2 and j2_array[j] != 0.0:
                 z      = dz
