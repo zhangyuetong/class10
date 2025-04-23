@@ -96,7 +96,7 @@ def run_error_analysis(
     fig.suptitle("Position Error Components vs DE440", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig("all_bodies_error_components.png")
-    plt.show()
+    #plt.show()
     print("总误差图已保存为 all_bodies_error_components.png")
 
     print("\n开始绘制『减去质心误差』的新图...")
@@ -124,5 +124,5 @@ def run_error_analysis(
     fig2.suptitle("Position Error minus Barycenter Error", fontsize=16)
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     plt.savefig("error_minus_barycenter.png")
-    plt.show()
+    #plt.show()
     print("新图已保存为 error_minus_barycenter.png")
