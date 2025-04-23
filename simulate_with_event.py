@@ -164,52 +164,62 @@ events = [
 # ------------------- 加速度计算（向量化） -------------------
 def calculate_accelerations_vectorized(positions, velocities, gm_values):
     # ------------------- 1) 牛顿引力 -------------------
+    # 计算任意两天体之间的位移向量 r_ij = r_i - r_j
     r_ij = positions[:, None, :] - positions[None, :, :]  # (n, n, 3)
-    
-    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10             # (n, n)
-    np.fill_diagonal(dist_sq, np.inf)                     # 避免除零，自身不参与
-    
-    dist = np.sqrt(dist_sq)                               # r
-    dist_cubed = dist_sq * dist                           # r^3
 
+    # 计算两两之间距离的平方：|r_ij|^2，避免除零在对角线加上小常数再置为无穷
+    dist_sq = np.sum(r_ij**2, axis=2) + 1e-10             # (n, n)
+    np.fill_diagonal(dist_sq, np.inf)                     # 自身不参与引力计算
+
+    dist = np.sqrt(dist_sq)                               # |r_ij|
+    dist_cubed = dist_sq * dist                           # |r_ij|^3
+
+    # Newton 重力公式：
+    #   a_i^(N) = -Σ_{j≠i} (G * M_j / |r_ij|^3) * r_ij
     factors_newton = gm_values[None, :, None] / dist_cubed[:, :, None]  # (n, n, 1)
     acc_newton = -np.sum(r_ij * factors_newton, axis=1)                 # (n, 3)
     acc_total = acc_newton
 
     # ------------------- 2) 简化 1PN 修正 -------------------
     if RELATIVITY_SWITCH:
+        # 相对速度向量 v_ij = v_i - v_j
         v_ij = velocities[:, None, :] - velocities[None, :, :]       # (n, n, 3)
-        v2_ij = np.sum(v_ij**2, axis=2)                               # (n, n)
-        r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)                      # (n, n)
+        v2_ij = np.sum(v_ij**2, axis=2)                               # |v_ij|^2
+        r_dot_v_ij = np.sum(r_ij * v_ij, axis=2)                      # r_ij · v_ij
 
+        # 1PN 修正项（简化形式）：
+        # a_i^(1PN) = Σ_{j≠i} (G * M_j / c^2 * |r_ij|^3) * [
+        #    (4 G M_j / |r_ij| - |v_ij|^2) * r_ij + 4 (r_ij · v_ij) * v_ij
+        # ]
         c2 = C_LIGHT**2
         factor_1pn = gm_values[None, :] / (c2 * dist**3)              # (n, n)
         factor_1pn = factor_1pn[:, :, None]                           # (n, n, 1)
 
-        GMj_over_r = gm_values[None, :] / dist                        # (n, n)
-        tmp = 4.0 * GMj_over_r - v2_ij                                # (n, n)
-        tmp = tmp[:, :, None]                                         # (n, n, 1)
+        GMj_over_r = gm_values[None, :] / dist                        # G * M_j / |r_ij|
+        tmp = 4.0 * GMj_over_r - v2_ij                                # 4GM_j/r - v^2
+        tmp = tmp[:, :, None]
 
-        term1 = tmp * r_ij
-        term1 += (4.0 * r_dot_v_ij[:, :, None]) * v_ij
-
+        term1 = tmp * r_ij + (4.0 * r_dot_v_ij[:, :, None]) * v_ij
         a_1pn_ij = factor_1pn * term1
         acc_1pn = np.sum(a_1pn_ij, axis=1)                            # (n, 3)
         acc_total += acc_1pn
 
     # ------------------- 3) J2 项 -------------------
     if J2_SWITCH:
+        # 提取 z 分量，计算 J2 项中的方向修正项
         z_ij = r_ij[..., 2]                                           # (n, n)
-        bracket_ij = 5.0 * (z_ij**2 / dist_sq) - 1.0                  # (n, n)
+        bracket_ij = 5.0 * (z_ij**2 / dist_sq) - 1.0                  # (5z²/r² - 1)
 
+        # J2 修正项：
+        # a_i^(J2) = Σ_{j≠i} [ (3 J2_j G M_j R_j^2) / (2 |r_ij|^5) ] * (5 z^2 / r^2 - 1) * r_ij
         J2_j = j2_array[None, :]                                      # (1, n)
         GM_j = gm_values[None, :]                                     # (1, n)
         R_j2 = r_array[None, :]**2                                    # (1, n)
 
-        factor_j2_ij = (1.5 * J2_j * GM_j * R_j2) / (dist**5)         # (n, n)
-        factor_j2_ij *= bracket_ij                                    # (n, n)
+        factor_j2_ij = (1.5 * J2_j * GM_j * R_j2) / (dist**5)         # 3/2 * J2 GM R² / r^5
+        factor_j2_ij *= bracket_ij                                    # 乘上方向项
 
-        a_j2_ij = factor_j2_ij[..., None] * r_ij                      # (n, n, 3)
+        a_j2_ij = factor_j2_ij[..., None] * r_ij                      # 方向向量
         acc_j2 = np.sum(a_j2_ij, axis=1)                              # (n, 3)
         acc_total += acc_j2
 
@@ -289,157 +299,15 @@ print("日食月食事件已保存至 eclipse_events.json")
 
 print(f"模拟完成，总用时 {time.time() - start_time:.2f} 秒")
 
-import math
-print("\n开始误差分析（多天体分量误差图，包括质心）...")
+from error_analysis import run_error_analysis
 
-# -------------------------------------------------------------
-# 基本时间轴与画布配置
-# -------------------------------------------------------------
-
-evaluation_times = np.arange(0, total_time, ERROR_EVAL_INTERVAL)
-
-time_years = evaluation_times / SECONDS_PER_YEAR
-n_bodies = len(BODIES)
-num_targets = len(ERROR_ANALYSIS_BODIES) + 1  # 额外加一个质心
-
-# 每行最多 3 张子图
-cols = 3
-rows = math.ceil(num_targets / cols)
-fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
-axes = axes.flatten()
-
-# -------------------------------------------------------------
-# 误差分析：各天体相对于 DE440
-# -------------------------------------------------------------
-
-diff_dict = {}  # 保存各天体的误差向量，方便后续去质心处理
-
-for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
-    idx = BODIES.index(body_name)
-    print(f"分析 {body_name.capitalize()} 的位置误差...")
-
-    # 数值解的位置
-    sim_pos = np.zeros((len(evaluation_times), 3))
-    for j, t_eval in enumerate(evaluation_times):
-        full_state = sol.sol(t_eval)
-        sim_pos[j, :] = full_state[idx * 6: idx * 6 + 3]
-
-    # 星历位置
-    std_pos = np.zeros_like(sim_pos)
-    for j, t_eval in enumerate(evaluation_times):
-        current_time = t0 + t_eval * u.s
-        pos_std, _ = get_body_barycentric_posvel(body_name, current_time)
-        std_pos[j, :] = pos_std.xyz.to(u.m).value
-
-    # 误差 (km)
-    diff = (sim_pos - std_pos) / 1000.0
-    diff_dict[body_name] = diff              # --- 关键：缓存误差向量
-
-    abs_error = np.linalg.norm(diff, axis=1)
-    error_x, error_y, error_z = diff.T
-
-    # 绘制
-    ax = axes[i]
-    ax.plot(time_years, abs_error, label='Abs', linewidth=0.5, color='black')
-    ax.plot(time_years, error_x,  label='X',   linewidth=0.5, color='red')
-    ax.plot(time_years, error_y,  label='Y',   linewidth=0.5, color='green')
-    ax.plot(time_years, error_z,  label='Z',   linewidth=0.5, color='blue')
-
-    ax.set_title(f"{body_name.capitalize()}")
-    ax.set_xlabel("Years")
-    ax.set_ylabel("Error (km)")
-    ax.grid(True)
-
-# -------------------------------------------------------------
-# 质心误差
-# -------------------------------------------------------------
-
-print("分析系统质心的位置误差...")
-
-sim_cm_pos = np.zeros((len(evaluation_times), 3))
-std_cm_pos = np.zeros_like(sim_cm_pos)
-
-mass_arr = np.array([GM_DICT[body] for body in BODIES]) / 6.67430e-11  # M = GM/G
-
-for j, t_eval in enumerate(evaluation_times):
-    full_state = sol.sol(t_eval).reshape((n_bodies, 6))
-    sim_positions = full_state[:, :3]
-    sim_cm_pos[j] = np.average(sim_positions, axis=0, weights=mass_arr)
-
-    std_positions = []
-    for body in BODIES:
-        current_time = t0 + t_eval * u.s
-        pos_std, _ = get_body_barycentric_posvel(body, current_time)
-        std_positions.append(pos_std.xyz.to(u.m).value)
-    std_positions = np.array(std_positions)
-    std_cm_pos[j] = np.average(std_positions, axis=0, weights=mass_arr)
-
-# 质心误差 (km)
-diff_cm = (sim_cm_pos - std_cm_pos) / 1000.0
-abs_error_cm = np.linalg.norm(diff_cm, axis=1)
-error_x_cm, error_y_cm, error_z_cm = diff_cm.T
-
-diff_dict["barycenter"] = diff_cm  # 方便检验
-
-# 绘制质心误差
-bary_ax_idx = len(ERROR_ANALYSIS_BODIES)
-ax = axes[bary_ax_idx]
-ax.plot(time_years, abs_error_cm, label='Abs', linewidth=0.5, color='black')
-ax.plot(time_years, error_x_cm,   label='X',   linewidth=0.5, color='red')
-ax.plot(time_years, error_y_cm,   label='Y',   linewidth=0.5, color='green')
-ax.plot(time_years, error_z_cm,   label='Z',   linewidth=0.5, color='blue')
-
-ax.set_title("Barycenter")
-ax.set_xlabel("Years")
-ax.set_ylabel("Error (km)")
-ax.grid(True)
-
-# -------------------------------------------------------------
-# 清理多余子图并保存
-# -------------------------------------------------------------
-
-for j in range(num_targets, len(axes)):
-    fig.delaxes(axes[j])
-
-fig.suptitle("Position Error Components vs DE440", fontsize=16)
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("all_bodies_error_components.png")
-plt.show()
-
-print("总误差图已保存为 all_bodies_error_components.png")
-
-# =============================================================
-# 追加：去质心误差 (Δr_body − Δr_CM)
-# =============================================================
-
-print("\n开始绘制『减去质心误差』的新图...")
-
-fig2, axes2 = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
-axes2 = axes2.flatten()
-
-for i, body_name in enumerate(ERROR_ANALYSIS_BODIES):
-    diff_rel = diff_dict[body_name] - diff_cm
-    abs_error_rel = np.linalg.norm(diff_rel, axis=1)
-    err_x_rel, err_y_rel, err_z_rel = diff_rel.T
-
-    ax2 = axes2[i]
-    ax2.plot(time_years, abs_error_rel, linewidth=0.5, label='Abs', color='black')
-    ax2.plot(time_years, err_x_rel,  linewidth=0.5, label='X', color='red')
-    ax2.plot(time_years, err_y_rel,  linewidth=0.5, label='Y', color='green')
-    ax2.plot(time_years, err_z_rel,  linewidth=0.5, label='Z', color='blue')
-
-    ax2.set_title(f"{body_name.capitalize()} – Δr − Δr_CM")
-    ax2.set_xlabel("Years")
-    ax2.set_ylabel("Residual Error (km)")
-    ax2.grid(True)
-
-# 删除多余子图
-for j in range(len(ERROR_ANALYSIS_BODIES), len(axes2)):
-    fig2.delaxes(axes2[j])
-
-fig2.suptitle("Position Error minus Barycenter Error", fontsize=16)
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("error_minus_barycenter.png")
-plt.show()
-
-print("新图已保存为 error_minus_barycenter.png")
+run_error_analysis(
+    sol=sol,
+    BODIES=BODIES,
+    GM_DICT=GM_DICT,
+    ERROR_ANALYSIS_BODIES=ERROR_ANALYSIS_BODIES,
+    SECONDS_PER_YEAR=SECONDS_PER_YEAR,
+    ERROR_EVAL_INTERVAL=ERROR_EVAL_INTERVAL,
+    t0_str=START_DATE,
+    t0_scale=TIME_SCALE
+)
