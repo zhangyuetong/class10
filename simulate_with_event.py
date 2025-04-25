@@ -1,11 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-预编译加速版日月食/多体引力模拟
---------------------------------
-1. 仅在*数值密集*的加速度例程中使用 Numba@njit(cache=True, fastmath=True)
-2. 其他高层逻辑(读星历、事件判定、误差分析)保持原样，以确保可读性与可维护性
-3. 首次运行将生成预编译缓存，后续再次启动即可“秒开”
+simulate_with_event.py
+
+行星-月食/日食与误差分析综合模拟
+J2 扁率项已按真实自转轴方向修正
 """
 
 # ------------------- 基础依赖 -------------------
@@ -21,11 +20,11 @@ from astropy.time import Time
 from astropy.coordinates import get_body_barycentric_posvel, solar_system_ephemeris
 import astropy.units as u
 
-import matplotlib.pyplot as plt  # 仅用于误差分析绘图，可与 Numba 共存
-from numba import njit
+import matplotlib.pyplot as plt          # 仅用于误差分析绘图
+from numba import njit, float64, int64    # Numba 加速
 
 # ------------------- 配置与全局常量 -------------------
-solar_system_ephemeris.set('de440')  # JPL DE440 星历
+solar_system_ephemeris.set('de440')       # JPL DE440 星历
 
 from config import (
     BODIES, GM_DICT,
@@ -33,6 +32,7 @@ from config import (
     SOLVER_METHOD, SOLVER_RTOL, SOLVER_ATOL, MAX_STEP_TIME,
     RELATIVITY_SWITCH, C_LIGHT,
     J2_SWITCH, J2_DICT, RADIUS_DICT,
+    SPIN_AXIS_DICT,                         # ★ 新增：行星自转轴方向
     MAX_SIN_ANGLE,
     ERROR_EVAL_INTERVAL, ERROR_ANALYSIS_BODIES
 )
@@ -48,10 +48,11 @@ for body in BODIES:
     pos, vel = get_body_barycentric_posvel(body, t0)
     init_state.extend([pos.get_xyz().to(u.m).value, vel.xyz.to(u.m/u.s).value])
 
-y0 = np.hstack(init_state).astype(np.float64)      # 初始状态向量
-gm_values  = np.array([GM_DICT[body]    for body in BODIES], dtype=np.float64)
-j2_array   = np.array([J2_DICT[body]    for body in BODIES], dtype=np.float64)
-radius_arr = np.array([RADIUS_DICT[body] for body in BODIES], dtype=np.float64)
+y0 = np.hstack(init_state).astype(np.float64)             # 初始状态向量
+gm_values     = np.array([GM_DICT[body]     for body in BODIES], dtype=np.float64)
+j2_array      = np.array([J2_DICT[body]     for body in BODIES], dtype=np.float64)
+radius_arr    = np.array([RADIUS_DICT[body] for body in BODIES], dtype=np.float64)
+spin_axis_arr = np.array([SPIN_AXIS_DICT[body] for body in BODIES], dtype=np.float64)
 
 # 重要索引
 sun_idx   = BODIES.index("sun")
@@ -66,10 +67,11 @@ R_moon  = 1.7374e6
 # ------------------- ❶ 预编译版加速度核心 -------------------
 @njit(cache=True, fastmath=True)
 def calc_acc_numba(pos, vel,
-                gm_values, j2_array, radius_arr,
-                relativity, c_light, use_j2):
+                   gm_values, j2_array, radius_arr, spin_axis_arr,
+                   relativity, c_light, use_j2):
     """
     Numba-JIT 加速度计算（O(n²) 双循环，适合天体数量 ≤ 数十）
+    采用真实自转轴方向计算 J2 扁率项
     参数均为 *裸 numpy.ndarray*，确保完全可编译
     """
     n = pos.shape[0]
@@ -80,7 +82,7 @@ def calc_acc_numba(pos, vel,
     for i in range(n):
         for j in range(n):
             if i == j:
-                continue  # 自身引力忽略
+                continue          # 自身引力忽略
 
             # -------- Newton 引力 --------
             dx = pos[i, 0] - pos[j, 0]
@@ -100,31 +102,12 @@ def calc_acc_numba(pos, vel,
             acc[i, 1] -= factor * dy
             acc[i, 2] -= factor * dz
 
-            # # -------- 1 PN 相对论修正 -------- 这是旧的相对论
-            # if relativity:
-            #     dvx = vel[i, 0] - vel[j, 0]
-            #     dvy = vel[i, 1] - vel[j, 1]
-            #     dvz = vel[i, 2] - vel[j, 2]
-
-            #     v2 = dvx*dvx + dvy*dvy + dvz*dvz
-            #     r_dot_v = dx*dvx + dy*dvy + dz*dvz
-            #     GMj_over_r = gm_values[j] / dist
-            #     tmp = 4.0 * GMj_over_r - v2
-
-            #     fac_1pn = gm_values[j] / (c2 * dist_cube)
-
-            #     acc[i, 0] += fac_1pn * (tmp * dx + 4.0 * r_dot_v * dvx)
-            #     acc[i, 1] += fac_1pn * (tmp * dy + 4.0 * r_dot_v * dvy)
-            #     acc[i, 2] += fac_1pn * (tmp * dz + 4.0 * r_dot_v * dvz)
-
-            # --- 1PN 修正项 ---
+            # -------- 1 PN 相对论修正 --------
             if relativity:
-                # 速度差
                 dvx = vel[i, 0] - vel[j, 0]
                 dvy = vel[i, 1] - vel[j, 1]
                 dvz = vel[i, 2] - vel[j, 2]
 
-                # 各种向量大小与内积
                 vi2 = vel[i, 0]**2 + vel[i, 1]**2 + vel[i, 2]**2
                 vj2 = vel[j, 0]**2 + vel[j, 1]**2 + vel[j, 2]**2
                 vi_dot_vj = vel[i, 0]*vel[j, 0] + vel[i, 1]*vel[j, 1] + vel[i, 2]*vel[j, 2]
@@ -135,25 +118,26 @@ def calc_acc_numba(pos, vel,
 
                 prefac = gm_values[j] / (c2 * dist_cube)
 
-                # 方向项（相对加速度修正主项）
                 dir_term = (4 * GMj_over_r - vi2 - 2 * vj2 + 4 * vi_dot_vj + 1.5 * n_dot_vj * n_dot_vj)
                 vel_term = (4 * n_dot_vi - 3 * n_dot_vj)
 
                 acc[i, 0] += prefac * (dir_term * dx + vel_term * dvx * dist)
                 acc[i, 1] += prefac * (dir_term * dy + vel_term * dvy * dist)
                 acc[i, 2] += prefac * (dir_term * dz + vel_term * dvz * dist)
-                
-            # -------- J2 扁率项 --------
-            if use_j2 and j2_array[j] != 0.0:
-                z      = dz
-                bracket = 5.0 * (z*z) / dist_sq - 1.0
-                fac_j2 = (1.5 * j2_array[j] * gm_values[j] *
-                        (radius_arr[j] ** 2)) / (dist ** 5)
-                fac_j2 *= bracket
 
-                acc[i, 0] += fac_j2 * dx
-                acc[i, 1] += fac_j2 * dy
-                acc[i, 2] += fac_j2 * dz
+            # -------- J2 扁率项（按真实自转轴） --------
+            if use_j2 and j2_array[j] != 0.0:
+                axj = spin_axis_arr[j, 0]
+                ayj = spin_axis_arr[j, 1]
+                azj = spin_axis_arr[j, 2]
+
+                rk = dx*axj + dy*ayj + dz*azj      # r·k
+                fac_j2 = 1.5 * j2_array[j] * gm_values[j] * (radius_arr[j]**2) / (dist**5)
+                common = 5.0 * (rk*rk) / dist_sq - 1.0
+
+                acc[i, 0] += fac_j2 * (common * dx - 2.0 * rk * axj)
+                acc[i, 1] += fac_j2 * (common * dy - 2.0 * rk * ayj)
+                acc[i, 2] += fac_j2 * (common * dz - 2.0 * rk * azj)
 
     return acc
 
@@ -161,8 +145,7 @@ def calc_acc_numba(pos, vel,
 # ------------------- ❷ SciPy ODE 回调 -------------------
 def derivatives(t, y):
     """
-    SciPy ODE 函数接口：拆分状态→调用已预编译的 calc_acc_numba→合并导数
-    仅在 Python 层进行少量切片操作，开销可忽略
+    SciPy ODE 接口：拆分状态→调用已预编译的 calc_acc_numba→合并导数
     """
     n = len(BODIES)
     state = y.reshape((n, 6))
@@ -171,7 +154,7 @@ def derivatives(t, y):
 
     acc = calc_acc_numba(
         pos, vel,
-        gm_values, j2_array, radius_arr,
+        gm_values, j2_array, radius_arr, spin_axis_arr,
         RELATIVITY_SWITCH, C_LIGHT, J2_SWITCH
     )
 
@@ -180,7 +163,7 @@ def derivatives(t, y):
     dydt[:, 3:] = acc
     return dydt.flatten()
 
-# ------------------- 几何辅助函数（已足够轻量，无需编译） -------------------
+# ------------------- 几何辅助函数（保持原逻辑） -------------------
 def body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
     """判断天体是否部分落入圆锥（负值⇒在锥内）"""
     cone_tip_to_body = body_pos - cone_tip
@@ -282,7 +265,7 @@ print(f"\n开始积分计算（{SOLVER_METHOD}），目标区间: 0 – {total_t
 
 tic = time.time()
 sol = solve_ivp(
-    derivatives,            # 已封装的导数函数
+    derivatives,                      # 已封装的导数函数
     [0.0, total_time],
     y0,
     method=SOLVER_METHOD,
@@ -330,7 +313,7 @@ with open("./report/eclipse_events.json", "w", encoding="utf-8") as f_json:
     json.dump(eclipse_events, f_json, indent=2, ensure_ascii=False)
 print("\n✅ 日月食事件已保存到 report/eclipse_events.json")
 
-# ------------------- ❻ 误差分析（外部模块） -------------------
+# ------------------- ❻ 误差分析 -------------------
 from error_analysis import run_error_analysis
 
 run_error_analysis(
