@@ -22,6 +22,7 @@ from astropy.coordinates import get_body_barycentric_posvel, solar_system_epheme
 import astropy.units as u
 
 import matplotlib.pyplot as plt  # 仅用于误差分析绘图，可与 Numba 共存
+from numba import njit
 
 # ------------------- 配置与全局常量 -------------------
 solar_system_ephemeris.set('de440')  # JPL DE440 星历
@@ -35,40 +36,6 @@ from config import (
     MAX_SIN_ANGLE,
     ERROR_EVAL_INTERVAL, ERROR_ANALYSIS_BODIES
 )
-
-# ------------------- 预编译支持检测 -------------------
-try:
-    from numba import njit
-    NUMBA_AVAILABLE = True
-except ImportError:
-    NUMBA_AVAILABLE = False
-    print("⚠  未检测到 Numba，将回退至纯 Numpy 版本（速度略慢）。\n"
-          "   可通过 `pip install numba` 启用预编译加速。")
-
-# ------------------- 几何辅助函数（已足够轻量，无需编译） -------------------
-def body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
-    """判断天体是否部分落入圆锥（负值⇒在锥内）"""
-    cone_tip_to_body = body_pos - cone_tip
-    proj_point = cone_tip + np.dot(cone_tip_to_body, cone_axis) * cone_axis / np.linalg.norm(cone_axis)**2
-    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
-    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
-    critical_distance = np.tan(half_angle) * horizontal_distance + body_radius / np.cos(half_angle)
-    return perpendicular_distance - critical_distance
-
-def body_totally_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
-    """判断天体是否完全落入圆锥（负值⇒完全在锥内）"""
-    cone_tip_to_body = body_pos - cone_tip
-    proj_point = cone_tip + np.dot(cone_tip_to_body, cone_axis) * cone_axis / np.linalg.norm(cone_axis)**2
-    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
-    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
-    critical_distance = np.tan(half_angle) * horizontal_distance - body_radius / np.cos(half_angle)
-    return perpendicular_distance - critical_distance
-
-def near_alignment_cross(es_vec, em_vec):
-    """|ES×EM| 足够小 ⇒ 日-地-月近似共线"""
-    cross_mag = np.linalg.norm(np.cross(es_vec, em_vec))
-    threshold = 1.49e11 * 3.84e8 * MAX_SIN_ANGLE  # 经验阈值
-    return cross_mag < threshold
 
 # ------------------- 初始化天体初值 -------------------
 t0 = Time(START_DATE, scale=TIME_SCALE)
@@ -213,6 +180,31 @@ def derivatives(t, y):
     dydt[:, 3:] = acc
     return dydt.flatten()
 
+# ------------------- 几何辅助函数（已足够轻量，无需编译） -------------------
+def body_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
+    """判断天体是否部分落入圆锥（负值⇒在锥内）"""
+    cone_tip_to_body = body_pos - cone_tip
+    proj_point = cone_tip + np.dot(cone_tip_to_body, cone_axis) * cone_axis / np.linalg.norm(cone_axis)**2
+    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
+    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
+    critical_distance = np.tan(half_angle) * horizontal_distance + body_radius / np.cos(half_angle)
+    return perpendicular_distance - critical_distance
+
+def body_totally_in_cone(body_pos, body_radius, cone_tip, cone_axis, half_angle):
+    """判断天体是否完全落入圆锥（负值⇒完全在锥内）"""
+    cone_tip_to_body = body_pos - cone_tip
+    proj_point = cone_tip + np.dot(cone_tip_to_body, cone_axis) * cone_axis / np.linalg.norm(cone_axis)**2
+    perpendicular_distance = np.linalg.norm(body_pos - proj_point)
+    horizontal_distance = np.linalg.norm(cone_tip - proj_point)
+    critical_distance = np.tan(half_angle) * horizontal_distance - body_radius / np.cos(half_angle)
+    return perpendicular_distance - critical_distance
+
+def near_alignment_cross(es_vec, em_vec):
+    """|ES×EM| 足够小 ⇒ 日-地-月近似共线"""
+    cross_mag = np.linalg.norm(np.cross(es_vec, em_vec))
+    threshold = 1.49e11 * 3.84e8 * MAX_SIN_ANGLE  # 经验阈值
+    return cross_mag < threshold
+
 # ------------------- ❸ 日月食事件工厂（保持原逻辑） -------------------
 def eclipse_event_factory(event_type):
     """根据类别生成 SciPy 事件函数，判定进入/离开食区"""
@@ -334,9 +326,9 @@ for title, times in zip(event_titles, sol.t_events):
             "midpoint": str(midpoint)
         })
 
-with open("eclipse_events.json", "w", encoding="utf-8") as f_json:
+with open("./report/eclipse_events.json", "w", encoding="utf-8") as f_json:
     json.dump(eclipse_events, f_json, indent=2, ensure_ascii=False)
-print("\n✅ 日月食事件已保存到 eclipse_events.json")
+print("\n✅ 日月食事件已保存到 report/eclipse_events.json")
 
 # ------------------- ❻ 误差分析（外部模块） -------------------
 from error_analysis import run_error_analysis
