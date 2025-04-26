@@ -126,3 +126,67 @@ def run_error_analysis(
     plt.savefig("./report/error_minus_barycenter.png")
     #plt.show()
     print("新图已保存为 report/error_minus_barycenter.png")
+
+import matplotlib.animation as animation
+
+def plot_sun_earth_moon_three_views_animation(sol, BODIES, t0_str, t0_scale, SECONDS_PER_YEAR):
+    print("\n开始绘制日-地-月三体三视图动图...")
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    limits = 2e11  # 设置坐标范围 ±2e11 米
+    view_labels = ['X-Y Plane', 'X-Z Plane', 'Y-Z Plane']
+    coord_pairs = [(0, 1), (0, 2), (1, 2)]
+
+    sun_dots = []
+    earth_dots = []
+    moon_dots = []
+
+    for ax, label in zip(axes, view_labels):
+        ax.set_xlim(-limits, limits)
+        ax.set_ylim(-limits, limits)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Position (m)')
+        ax.set_ylabel('Position (m)')
+        ax.set_title(label)
+        sun_dot, = ax.plot([], [], 'yo', markersize=12, label='Sun')
+        earth_dot, = ax.plot([], [], 'bo', markersize=6, label='Earth')
+        moon_dot, = ax.plot([], [], 'ko', markersize=3, label='Moon')
+        ax.legend()
+        sun_dots.append(sun_dot)
+        earth_dots.append(earth_dot)
+        moon_dots.append(moon_dot)
+
+    t0 = Time(t0_str, scale=t0_scale)
+    total_time = sol.t[-1]
+    frames = np.linspace(0, total_time, 300)  # 取300帧
+
+    sun_idx = BODIES.index("sun")
+    earth_idx = BODIES.index("earth")
+    moon_idx = BODIES.index("moon")
+
+    def init():
+        for sun_dot, earth_dot, moon_dot in zip(sun_dots, earth_dots, moon_dots):
+            sun_dot.set_data([], [])
+            earth_dot.set_data([], [])
+            moon_dot.set_data([], [])
+        return sun_dots + earth_dots + moon_dots
+
+    def update(frame):
+        state = sol.sol(frame)
+        sun_pos = state[sun_idx*6 : sun_idx*6+3]
+        earth_pos = state[earth_idx*6 : earth_idx*6+3]
+        moon_pos = state[moon_idx*6 : moon_idx*6+3]
+
+        for (i, (x_idx, y_idx)) in enumerate(coord_pairs):
+            sun_dots[i].set_data(sun_pos[x_idx], sun_pos[y_idx])
+            earth_dots[i].set_data(earth_pos[x_idx], earth_pos[y_idx])
+            moon_dots[i].set_data(moon_pos[x_idx], moon_pos[y_idx])
+
+        return sun_dots + earth_dots + moon_dots
+
+    ani = animation.FuncAnimation(fig, update, frames=frames, init_func=init, blit=True, interval=50)
+
+    ani.save("./report/sun_earth_moon_three_views.gif", writer='pillow')
+    print("三视图动图已保存为 report/sun_earth_moon_three_views.gif")
+    # plt.show()

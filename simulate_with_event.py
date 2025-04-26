@@ -336,4 +336,13 @@ run_error_analysis(
     t0_scale=TIME_SCALE
 )
 
-print(f"\n模拟整体完成，总耗时 {time.time() - tic:.2f} 秒（含误差分析）")
+# from error_analysis import plot_sun_earth_moon_three_views_animation
+# plot_sun_earth_moon_three_views_animation(
+#     sol=sol, 
+#     BODIES=BODIES, 
+#     t0_str=START_DATE, 
+#     t0_scale=TIME_SCALE, 
+#     SECONDS_PER_YEAR=SECONDS_PER_YEAR
+# )
+
+print(f"\n模拟整体完成，总耗时 {time.time() - tic:.2f} 秒（含误差分析等）")
