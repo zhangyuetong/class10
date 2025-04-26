@@ -37,7 +37,7 @@ C_LIGHT = 299792458.0  # 光速（m/s）
 SOLVER_METHOD = 'DOP853'                 # 积分方法，DOP853为高精度方法
 SOLVER_RTOL = 1e-13                       # 相对误差容限
 SOLVER_ATOL = 1e-16                      # 绝对误差容限
-MAX_STEP_TIME = 1800                    # simulate_with_event里面的检测周期（秒）
+MAX_STEP_TIME = 86400                    # simulate_with_event里面的检测周期（秒）
 
 RELATIVITY_SWITCH = True # 相对论修正开关
 

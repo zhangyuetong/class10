@@ -135,9 +135,18 @@ def calc_acc_numba(pos, vel,
                 fac_j2 = 1.5 * j2_array[j] * gm_values[j] * (radius_arr[j]**2) / (dist**5)
                 common = 5.0 * (rk*rk) / dist_sq - 1.0
 
-                acc[i, 0] += fac_j2 * (common * dx - 2.0 * rk * axj)
-                acc[i, 1] += fac_j2 * (common * dy - 2.0 * rk * ayj)
-                acc[i, 2] += fac_j2 * (common * dz - 2.0 * rk * azj)
+                ax = fac_j2 * (common * dx - 2.0 * rk * axj)
+                ay = fac_j2 * (common * dy - 2.0 * rk * ayj)
+                az = fac_j2 * (common * dz - 2.0 * rk * azj)
+
+                acc[i, 0] += ax
+                acc[i, 1] += ay
+                acc[i, 2] += az
+                
+                mass_ratio = gm_values[i] / gm_values[j]
+                acc[j, 0] -= mass_ratio * ax
+                acc[j, 1] -= mass_ratio * ay
+                acc[j, 2] -= mass_ratio * az
 
     return acc
 
