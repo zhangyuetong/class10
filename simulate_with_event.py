@@ -148,6 +148,41 @@ def calc_acc_numba(pos, vel,
                 acc[j, 1] -= mass_ratio * ay
                 acc[j, 2] -= mass_ratio * az
 
+
+            # # -------- J3, J4, J5 高阶项（仅地球对月球） --------
+            # if use_j2 and i == moon_idx and j == earth_idx:
+            #     # 地球参数
+            #     J3 = -2.52e-6  # 地球J3值
+            #     J4 = -1.61e-6  # 地球J4值
+            #     J5 = -1.5e-7   # 地球J5值
+            #     R_eq = radius_arr[earth_idx]
+                
+            #     z = dz
+            #     z_r = z / dist  # z/r
+                
+            #     # J3 项
+            #     fac_j3 = 0.5 * J3 * gm_values[earth_idx] * (R_eq / dist) ** 3 / (dist**2)
+            #     ax_j3 = fac_j3 * (5 * (7 * z_r ** 3 - 3 * z_r) * nx)
+            #     ay_j3 = fac_j3 * (5 * (7 * z_r ** 3 - 3 * z_r) * ny)
+            #     az_j3 = fac_j3 * (3 * (1 - 10 * z_r ** 2 + 35 / 3 * z_r ** 4))
+                
+            #     # J4 项
+            #     fac_j4 = (5 / 8) * J4 * gm_values[earth_idx] * (R_eq / dist) ** 4 / (dist**2)
+            #     ax_j4 = fac_j4 * ((3 - 42 * z_r ** 2 + 63 * z_r ** 4) * nx)
+            #     ay_j4 = fac_j4 * ((3 - 42 * z_r ** 2 + 63 * z_r ** 4) * ny)
+            #     az_j4 = fac_j4 * ((15 - 70 * z_r ** 2 + 63 * z_r ** 4))
+                
+            #     # J5 项
+            #     fac_j5 = (15 / 8) * J5 * gm_values[earth_idx] * (R_eq / dist) ** 5 / (dist**2)
+            #     ax_j5 = fac_j5 * (3 * (35 * z_r ** 3 - 210 * z_r ** 5 + 231 * z_r ** 5) * nx)
+            #     ay_j5 = fac_j5 * (3 * (35 * z_r ** 3 - 210 * z_r ** 5 + 231 * z_r ** 5) * ny)
+            #     az_j5 = fac_j5 * (693 * z_r ** 6 - 945 * z_r ** 4 + 315 * z_r ** 2 - 15)
+                
+            #     # 累加到加速度
+            #     acc[moon_idx, 0] += ax_j3 + ax_j4 + ax_j5
+            #     acc[moon_idx, 1] += ay_j3 + ay_j4 + ay_j5
+            #     acc[moon_idx, 2] += az_j3 + az_j4 + az_j5
+
     return acc
 
 
